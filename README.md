@@ -46,37 +46,43 @@ This skill works with both Codex and Claude Code. The install steps differ only 
 
 ### Codex
 
-Install it into your Codex skills directory:
+Codex has a built-in GitHub skill installer. Install the skill directly from this repo:
 
 ```bash
-DEST="${CODEX_HOME:-$HOME/.codex}/skills/jupyter-live-kernel"
-rm -rf "$DEST"
-mkdir -p "$(dirname "$DEST")"
-cp -R skills/jupyter-live-kernel "$DEST"
+python3 "${CODEX_HOME:-$HOME/.codex}/skills/.system/skill-installer/scripts/install-skill-from-github.py" \
+  --repo hamelsmu/hamelnb \
+  --path skills/jupyter-live-kernel
 ```
 
 Then restart Codex.
 
 ### Claude Code
 
-Claude Code reads skills from `.claude/skills/` in the current project or `~/.claude/skills/` for all projects.
+Claude Code loads skills from `.claude/skills/`, including repos you add with `--add-dir`.
 
-Install it for this project:
+Clone this repo somewhere stable, then add it when you start Claude Code:
 
 ```bash
-DEST=".claude/skills/jupyter-live-kernel"
-rm -rf "$DEST"
-mkdir -p "$(dirname "$DEST")"
-cp -R skills/jupyter-live-kernel "$DEST"
+git clone https://github.com/hamelsmu/hamelnb.git ~/.agent-skills/hamelnb
+claude --add-dir ~/.agent-skills/hamelnb
 ```
 
-If you want it in every project, replace `.claude` with `~/.claude`.
+If you are already in a Claude Code session, run `/add-dir ~/.agent-skills/hamelnb`.
+
+If you want the skill available in every project without `--add-dir`, symlink it into `~/.claude/skills/`:
+
+```bash
+git clone https://github.com/hamelsmu/hamelnb.git ~/.agent-skills/hamelnb
+mkdir -p ~/.claude/skills
+ln -s ~/.agent-skills/hamelnb/.claude/skills/jupyter-live-kernel ~/.claude/skills/jupyter-live-kernel
+```
 
 Reference:
 - [Claude Code skills docs](https://code.claude.com/docs/en/slash-commands)
 
 ## Project Layout
 
+- `.claude/skills/jupyter-live-kernel/`: Claude Code entrypoint for the shared skill
 - `skills/jupyter-live-kernel/`: the shared skill files
 - `skills/jupyter-live-kernel/scripts/jupyter_live_kernel.py`: discovery, edit, execution, verification, and variable commands
 - `skills/jupyter-live-kernel/references/jupyter-hooks.md`: Jupyter API and extension notes
