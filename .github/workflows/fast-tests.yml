@@ -23,8 +23,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install .
-          python -m pip install pytest
+          python -m pip install pytest jupyterlab requests websocket-client jupyter-client nbformat
 
       - name: Run fast suite
         run: python -m pytest tests/test_jupyter_live_kernel.py -q
