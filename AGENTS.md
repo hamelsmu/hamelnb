@@ -3,20 +3,28 @@
 This repo contains a shared skill for working against a live local Jupyter notebook kernel without rerunning whole scripts.
 
 Canonical doc:
-- [SKILL.md](/Users/hamel/git/hamelnb/skills/jupyter-live-kernel/SKILL.md) is the source of truth for command semantics and limits.
+- [SKILL.md](./skills/jupyter-live-kernel/SKILL.md) is the source of truth for command semantics and limits.
 
 Primary files:
-- [SKILL.md](/Users/hamel/git/hamelnb/skills/jupyter-live-kernel/SKILL.md)
-- [jupyter_live_kernel.py](/Users/hamel/git/hamelnb/skills/jupyter-live-kernel/scripts/jupyter_live_kernel.py)
-- [test_jupyter_live_kernel.py](/Users/hamel/git/hamelnb/tests/test_jupyter_live_kernel.py)
+- [SKILL.md](./skills/jupyter-live-kernel/SKILL.md)
+- [jupyter_live_kernel.py](./skills/jupyter-live-kernel/scripts/jupyter_live_kernel.py)
+- [test_jupyter_live_kernel.py](./tests/test_jupyter_live_kernel.py)
 
 ## Fastest Test Path
 
 ```bash
-python3 -m unittest -v tests/test_jupyter_live_kernel.py
+python3 -m pytest tests/test_jupyter_live_kernel.py -v
 ```
 
-This covers:
+This runs the default fast suite (unit + non-slow integration) and skips expensive verification scenarios.
+
+## Full Coverage Test Path
+
+```bash
+JLK_RUN_SLOW_INTEGRATION=1 python3 -m pytest tests/test_jupyter_live_kernel.py -v
+```
+
+This additionally covers:
 - server discovery
 - notebook/session listing
 - contents fetch

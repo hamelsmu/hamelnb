@@ -273,7 +273,7 @@ def _select_server(
         for server in _running_server_infos():
             if port and server.port != port:
                 continue
-            if server_url and server.root_url != server_url:
+            if server_url and server.root_url.rstrip("/") != server_url.rstrip("/"):
                 continue
             probe = probe_server(server, timeout=timeout)
             if probe.reachable and probe.auth_ok:
@@ -902,6 +902,26 @@ def _execute_request(
     )
 
 
+def _ensure_kernel_idle(server: ServerInfo, kernel_id: str, timeout: float) -> None:
+    """Wait for the kernel to be idle before attempting execution.
+
+    Newly started or restarted kernels may not be ready for websocket
+    connections even when the REST API reports idle.  A brief poll here
+    prevents a class of flaky 'request_sent but recv failed' errors.
+    """
+    client = ServerClient(server, timeout=timeout)
+    deadline = time.time() + min(timeout, 10.0)
+    while time.time() < deadline:
+        try:
+            model = _get_kernel_model(server, kernel_id, timeout=timeout, client=client)
+        except HTTPCommandError:
+            time.sleep(0.2)
+            continue
+        if model.get("execution_state") in {"idle", None}:
+            return
+        time.sleep(0.2)
+
+
 def _execute_request_with_target(
     server: ServerInfo,
     *,
@@ -975,12 +995,17 @@ def execute_code(
 
 
 
-def _ws_url(server: ServerInfo, kernel_id: str) -> str:
+def _ws_url(server: ServerInfo, kernel_id: str, *, session_id: str | None = None) -> str:
     base = urljoin(server.ws_root_url, f"api/kernels/{kernel_id}/channels")
-    if not server.token:
+    params: dict[str, str] = {}
+    if server.token:
+        params["token"] = server.token
+    if session_id:
+        params["session_id"] = session_id
+    if not params:
         return base
     separator = "&" if "?" in base else "?"
-    return f"{base}{separator}{urlencode({'token': server.token})}"
+    return f"{base}{separator}{urlencode(params)}"
 
 
 
@@ -1041,13 +1066,16 @@ def _execute_via_websocket(
     request: ExecuteRequest,
     timeout: float,
 ) -> ExecutionResult:
+    # Kernel REST state can report ready before channels accept stable websocket traffic.
+    # Keep this check bounded to avoid regressing steady-state execute throughput.
+    _ensure_kernel_idle(server, kernel_id, min(timeout, 5.0))
     client = ServerClient(server, timeout=timeout)
     msg_id = uuid.uuid4().hex
     shell_session_id = uuid.uuid4().hex
     payload = {
         "header": {
             "msg_id": msg_id,
-            "username": "codex",
+            "username": "agent",
             "session": shell_session_id,
             "msg_type": "execute_request",
             "version": "5.3",
@@ -1073,7 +1101,7 @@ def _execute_via_websocket(
     ws = None
     try:
         ws = websocket.create_connection(
-            _ws_url(server, kernel_id),
+            _ws_url(server, kernel_id, session_id=session_id),
             header=client.websocket_headers(),
             timeout=timeout,
         )
@@ -1095,7 +1123,9 @@ def _execute_via_websocket(
                 break
         else:
             raise CommandError("Timed out waiting for kernel execution to finish over websocket.")
-    except Exception as exc:
+    except CommandError:
+        raise
+    except (OSError, websocket.WebSocketException, json.JSONDecodeError) as exc:
         raise TransportRetryUnsafeError(_sanitize_error_text(str(exc), server_token=server.token), request_sent=request_sent) from exc
     finally:
         if ws is not None:
@@ -1158,17 +1188,24 @@ def _collect_output(events: list[dict[str, Any]], msg: dict[str, Any]) -> None:
 
 
 
-def _get_kernel_model(server: ServerInfo, kernel_id: str, timeout: float = DEFAULT_TIMEOUT) -> dict[str, Any]:
-    client = ServerClient(server, timeout=timeout)
+def _get_kernel_model(
+    server: ServerInfo,
+    kernel_id: str,
+    timeout: float = DEFAULT_TIMEOUT,
+    *,
+    client: ServerClient | None = None,
+) -> dict[str, Any]:
+    client = client or ServerClient(server, timeout=timeout)
     return client.request("GET", f"api/kernels/{quote(kernel_id, safe='')}", timeout=timeout)
 
 
 def _wait_for_kernel_idle(server: ServerInfo, kernel_id: str, timeout: float) -> dict[str, Any]:
+    client = ServerClient(server, timeout=timeout)
     deadline = time.time() + timeout
     last_state: str | None = None
     while time.time() < deadline:
         try:
-            model = _get_kernel_model(server, kernel_id, timeout=timeout)
+            model = _get_kernel_model(server, kernel_id, timeout=timeout, client=client)
         except HTTPCommandError as exc:
             if exc.status_code == 404:
                 time.sleep(0.2)
@@ -1256,6 +1293,7 @@ def run_all_cells(
         timeout=timeout,
     )
     _require_notebook_session(target, "Run-all")
+    _ensure_kernel_idle(server, target.kernel_id, timeout)
     notebook_path = path or target.path
 
     model = _load_notebook_model(server, notebook_path, timeout=timeout)
@@ -1349,6 +1387,7 @@ def restart_and_run_all(
         kernel_id=target.kernel_id,
         timeout=timeout,
     )
+    _ensure_kernel_idle(server, target.kernel_id, timeout)
     run_all = run_all_cells(
         server,
         path=target.path,
@@ -1388,7 +1427,7 @@ def _user_expression_value(reply: dict[str, Any], name: str) -> Any:
 
 
 def _sanitize_error_text(text: str, *, server_token: str | None = None) -> str:
-    redacted = re.sub(r'([?&]token=)([^&\\s]+)', r'\1[REDACTED]', text)
+    redacted = re.sub(r'([?&]token=)([^&\s]+)', r'\1[REDACTED]', text)
     if server_token:
         redacted = redacted.replace(server_token, "[REDACTED]")
     return redacted
@@ -1518,6 +1557,8 @@ def preview_variable(
     name: str,
     max_chars: int,
 ) -> dict[str, Any]:
+    if not name.isidentifier():
+        raise CommandError(f"Variable name {name!r} is not a valid Python identifier.")
     max_chars = _bounded_positive_int(max_chars, name="max-chars", maximum=2000)
     target = _resolve_kernel_target(
         server,
@@ -1747,12 +1788,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    server_token: str | None = None
     try:
         if args.command == "servers":
             _print({"servers": discover_servers(timeout=args.timeout)}, args.compact)
             return 0
 
         server = _select_server(server_url=args.server_url, port=args.port, timeout=args.timeout)
+        server_token = server.token
 
         if args.command == "notebooks":
             _print(combined_open_notebooks(server, timeout=args.timeout), args.compact)
@@ -1903,11 +1946,11 @@ def main(argv: list[str] | None = None) -> int:
             _print(result, args.compact)
             return 0
     except CommandError as exc:
-        token = server.token if "server" in locals() else None
+        token = server_token
         print(json.dumps({"error": _sanitize_error_text(str(exc), server_token=token)}, indent=2), file=sys.stderr)
         return 1
     except Exception as exc:  # pragma: no cover - defensive CLI surface
-        token = server.token if "server" in locals() else None
+        token = server_token
         message = _sanitize_error_text(f"Unexpected error: {exc}", server_token=token)
         print(json.dumps({"error": message}, indent=2), file=sys.stderr)
         return 1
