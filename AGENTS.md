@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This repo contains a Codex skill for working against a live local Jupyter notebook kernel without rerunning whole scripts.
+This repo contains a shared skill for working against a live local Jupyter notebook kernel without rerunning whole scripts.
 
 Canonical doc:
 - [SKILL.md](/Users/hamel/git/hamelnb/skills/jupyter-live-kernel/SKILL.md) is the source of truth for command semantics and limits.

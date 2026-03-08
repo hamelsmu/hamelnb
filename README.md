@@ -40,6 +40,8 @@ Key limits:
 - variable inspection is Python-only and preview is intentionally bounded
 - this project targets local Jupyter servers
 
+This skill works with both Codex and Claude Code. The install steps differ only because each tool uses a different skills directory.
+
 ## Install the Skill
 
 ### Codex
@@ -75,7 +77,7 @@ Reference:
 
 ## Project Layout
 
-- `skills/jupyter-live-kernel/`: the Codex skill
+- `skills/jupyter-live-kernel/`: the shared skill files
 - `skills/jupyter-live-kernel/scripts/jupyter_live_kernel.py`: discovery, edit, execution, verification, and variable commands
 - `skills/jupyter-live-kernel/references/jupyter-hooks.md`: Jupyter API and extension notes
 - `tests/test_jupyter_live_kernel.py`: unit and end-to-end coverage

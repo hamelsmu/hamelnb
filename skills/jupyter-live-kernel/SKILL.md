@@ -1,6 +1,6 @@
 ---
 name: jupyter-live-kernel
-description: Work against a live local Jupyter notebook kernel. Use this when Codex needs a Jupyter-like in-memory REPL, wants to inspect or edit a notebook while keeping the kernel alive, or needs an explicit verification pass at the end.
+description: Work against a live local Jupyter notebook kernel. Use this when an agent needs a Jupyter-like in-memory REPL, wants to inspect or edit a notebook while keeping the kernel alive, or needs an explicit verification pass at the end.
 ---
 
 # Jupyter Live Kernel
