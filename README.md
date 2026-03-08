@@ -9,6 +9,14 @@ Coding agents write entire scripts in one shot, then debug from the top when som
 
 It works with Claude Code and Codex.
 
+## Demo Video
+
+<!-- TODO: Replace VIDEO_URL_HERE with the published demo URL -->
+[Watch the demo video](VIDEO_URL_HERE)
+
+<!-- Optional inline preview image thumbnail -->
+<!-- [![hamelnb demo video](THUMBNAIL_IMAGE_URL_HERE)](VIDEO_URL_HERE) -->
+
 ## Use it when
 
 - You're hitting an unfamiliar API and want the agent to actually try things before writing the final code
