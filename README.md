@@ -1,23 +1,37 @@
 # hamelnb
 
-`hamelnb` gives Codex a practical live Jupyter notebook workflow against a running local kernel.
+`hamelnb` lets a coding agent work with a live local notebook.
 
-It is worth trying if you debug or iterate in stateful notebooks and do not want every small fix to trigger a full rerun.
+It helps when part of your workflow takes a long time to run and you do not want every small fix to start over.
+
+Notebooks are useful for data analysis, debugging, and exploratory work. This skill brings that workflow into a coding agent without asking you to leave the tools you already use.
 
 Use it when:
-- a notebook already holds expensive in-memory state and you do not want to rerun setup cells
-- you need to inspect or edit a notebook while keeping the kernel alive
-- you want an explicit end-of-task verification pass with `run-all` or `restart-run-all`
+- some notebook steps are slow and you want to keep that work alive
+- you want your coding agent to inspect or edit notebook cells
+- you want to test a change against the live notebook state instead of rerunning everything
+- you want an explicit reset or verification pass at the end
 
-It provides:
-- local Jupyter server and notebook-session discovery
-- saved notebook inspection
-- notebook cell edits through the Contents API
-- incremental kernel execution
-- saved-output clearing
-- kernel restart
-- notebook-wide verification without saving outputs back into the notebook
-- bounded live variable inspection for Python kernels
+What it does:
+- finds local notebook sessions
+- reads saved notebook contents
+- edits notebook cells
+- runs code in the live notebook kernel
+- inspects live Python variables
+- clears saved outputs
+- restarts and verifies notebooks when you ask for it
+
+Start here:
+- [AGENTS.md](/Users/hamel/git/hamelnb/AGENTS.md) for the shortest operator path
+- [SKILL.md](/Users/hamel/git/hamelnb/skills/jupyter-live-kernel/SKILL.md) for command behavior and limits
+
+## How It Works
+
+The skill connects to a local Jupyter server, finds live notebook sessions, reads the saved notebook file, and sends code to the running kernel.
+
+That gives an agent two useful modes:
+- the normal loop: inspect, edit, run a small change, inspect variables, repeat
+- the verification loop: restart and run the notebook from the top when you explicitly want a fresh check
 
 Key limits:
 - notebook reads come from the saved `.ipynb`, not unsaved browser edits in JupyterLab
@@ -26,42 +40,38 @@ Key limits:
 - variable inspection is Python-only and preview is intentionally bounded
 - this project targets local Jupyter servers
 
-Start here:
-- [AGENTS.md](/Users/hamel/git/hamelnb/AGENTS.md) for the shortest operator path
-- [SKILL.md](/Users/hamel/git/hamelnb/skills/jupyter-live-kernel/SKILL.md) for canonical command behavior and limits
+## Install the Skill
 
-## Claude Code
+### Codex
 
-If you want to use this repo from Claude Code, install Claude Code first and then run the helper script from this repo directly.
-
-Recommended install:
+Install it into your Codex skills directory:
 
 ```bash
-curl -fsSL https://claude.ai/install.sh | bash
+DEST="${CODEX_HOME:-$HOME/.codex}/skills/jupyter-live-kernel"
+rm -rf "$DEST"
+mkdir -p "$(dirname "$DEST")"
+cp -R skills/jupyter-live-kernel "$DEST"
 ```
 
-Other official install options:
-- Windows PowerShell: `irm https://claude.ai/install.ps1 | iex`
-- Windows CMD: `curl -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del install.cmd`
-- Homebrew: `brew install --cask claude-code`
-- WinGet: `winget install Anthropic.ClaudeCode`
+Then restart Codex.
 
-Then start Claude Code and log in:
+### Claude Code
+
+Claude Code reads skills from `.claude/skills/` in the current project or `~/.claude/skills/` for all projects.
+
+Install it for this project:
 
 ```bash
-claude
+DEST=".claude/skills/jupyter-live-kernel"
+rm -rf "$DEST"
+mkdir -p "$(dirname "$DEST")"
+cp -R skills/jupyter-live-kernel "$DEST"
 ```
 
-Verify the install:
+If you want it in every project, replace `.claude` with `~/.claude`.
 
-```bash
-claude --version
-```
-
-Notes:
-- Anthropic recommends the native installer. The npm install path is deprecated.
-- Windows requires Git for Windows.
-- Official docs: [Claude Code setup](https://code.claude.com/docs/en/setup) and [quickstart](https://code.claude.com/docs/en/quickstart)
+Reference:
+- [Claude Code skills docs](https://code.claude.com/docs/en/slash-commands)
 
 ## Project Layout
 
