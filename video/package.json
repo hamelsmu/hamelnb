@@ -1,0 +1,23 @@
+{
+  "name": "hamelnb-video",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "render": "remotion render src/index.ts SkillShowcase out/jupyter-live-kernel-demo.mp4",
+    "render:still": "remotion still src/index.ts SkillShowcase out/poster.png --frame 210",
+    "studio": "remotion studio src/index.ts",
+    "compositions": "remotion compositions src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/google-fonts": "4.0.434",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.434"
+  },
+  "devDependencies": {
+    "@remotion/cli": "4.0.434",
+    "typescript": "5.9.2"
+  }
+}

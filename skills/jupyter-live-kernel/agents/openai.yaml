@@ -1,0 +1,4 @@
+interface:
+  display_name: "Jupyter Live Kernel"
+  short_description: "Inspect live notebooks and run kernel code."
+  default_prompt: "Inspect a local JupyterLab or Jupyter Server instance, list live notebook sessions, read saved notebook contents, and execute code incrementally in an existing kernel."
