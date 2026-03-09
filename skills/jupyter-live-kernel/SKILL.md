@@ -79,10 +79,29 @@ uv run "$SCRIPT" edit \
   --compact
 ```
 
+To **insert a new cell**, use `insert` with `--at-index`, `--before <int>`, or `--after <int>`.
+Note: `--before`/`--after` accept integer indices, **not** cell IDs.
+```bash
+uv run "$SCRIPT" edit \
+  --port 8899 \
+  --path demo.ipynb \
+  insert \
+  --at-index 1 \
+  --cell-type code \
+  --source $'print("hello")' \
+  --compact
+```
+
+The available `edit` subcommands are: `replace-source`, `insert`, `delete`, `move`, `clear-outputs`.
+
 Core guidance:
-- Prefer `--cell-id` over `--index` for existing cells.
+- Prefer `--cell-id` over `--index` for existing cells (`replace-source`, `delete`, `move`).
+- For `insert`, use `--at-index` (integer) — cell IDs are not accepted by `--before`/`--after`.
 - Use `execute` for the normal loop.
 - Keep `restart`, `run-all`, and `restart-run-all` for explicit verification or reset requests, not routine iteration.
+- Use `--save-outputs` with `run-all` or `restart-run-all` to persist cell outputs into the notebook file so they appear in the JupyterLab UI.
+- When using `execute` with `--cell-id`, outputs are automatically saved to the notebook file (no need to pass `--save-outputs` separately). Without `--cell-id`, outputs are not saved.
+- To use the kernel as a pure REPL without persisting outputs, pass `--no-save-outputs`. This suppresses the automatic save even when `--cell-id` is provided. Only use this flag when the user explicitly says they don't need the notebook updated (e.g. "run this headlessly", "I don't care about the notebook output"). Default to saving outputs.
 
 ## Target Selection And Ambiguity
 
@@ -130,7 +149,8 @@ Verification commands:
 ```bash
 uv run "$SCRIPT" restart --port 8899 --path demo.ipynb --compact
 uv run "$SCRIPT" run-all --port 8899 --path demo.ipynb --compact
-uv run "$SCRIPT" restart-run-all --port 8899 --path demo.ipynb --compact
+uv run "$SCRIPT" run-all --port 8899 --path demo.ipynb --save-outputs --compact
+uv run "$SCRIPT" restart-run-all --port 8899 --path demo.ipynb --save-outputs --compact
 ```
 
 Advanced guidance:
@@ -138,7 +158,7 @@ Advanced guidance:
 - `run-all` and `restart-run-all` require a notebook-backed live session.
 - `run-all` and `restart-run-all` exit non-zero when a cell fails.
 - `run-all` and `restart-run-all` verify a saved snapshot loaded at the start.
-- `run-all` and `restart-run-all` do not write outputs back into the notebook file.
+- Pass `--save-outputs` to `run-all` or `restart-run-all` to persist cell outputs and execution counts back into the notebook file. Without this flag outputs are not written back.
 
 ## Transport
 

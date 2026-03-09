@@ -783,6 +783,99 @@ def clear_cell_outputs(
     }
 
 
+def _events_to_notebook_outputs(
+    events: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int | None]:
+    """Convert execution events to notebook cell output format.
+
+    Returns (outputs, execution_count).
+    """
+    outputs: list[dict[str, Any]] = []
+    execution_count: int | None = None
+    for event in events:
+        etype = event.get("type")
+        if etype == "execute_input":
+            execution_count = event.get("execution_count")
+        elif etype == "stream":
+            outputs.append({
+                "output_type": "stream",
+                "name": event.get("name", "stdout"),
+                "text": event.get("text", ""),
+            })
+        elif etype == "execute_result":
+            execution_count = event.get("execution_count") or execution_count
+            outputs.append({
+                "output_type": "execute_result",
+                "data": event.get("data", {}),
+                "metadata": event.get("metadata", {}),
+                "execution_count": event.get("execution_count"),
+            })
+        elif etype == "display_data":
+            outputs.append({
+                "output_type": "display_data",
+                "data": event.get("data", {}),
+                "metadata": event.get("metadata", {}),
+            })
+        elif etype == "error":
+            outputs.append({
+                "output_type": "error",
+                "ename": event.get("ename", ""),
+                "evalue": event.get("evalue", ""),
+                "traceback": event.get("traceback", []),
+            })
+    return outputs, execution_count
+
+
+def _save_run_all_outputs(
+    server: ServerInfo,
+    path: str,
+    *,
+    executed_model: dict[str, Any],
+    timeout: float,
+) -> None:
+    """Merge executed outputs into the latest notebook model before saving.
+
+    This keeps notebook-level metadata and concurrent non-source changes made by JupyterLab,
+    while still rejecting structural or source edits that would invalidate the run results.
+    """
+    latest_model = _load_notebook_model(server, path, timeout=timeout)
+    executed_cells = executed_model.get("cells") or []
+    latest_cells = (latest_model.get("content") or {}).get("cells") or []
+
+    if len(executed_cells) != len(latest_cells):
+        raise CommandError(
+            "Notebook changed while run-all was executing; cell structure no longer matches, so outputs were not saved."
+        )
+
+    for index, (executed_cell, latest_cell) in enumerate(zip(executed_cells, latest_cells)):
+        if executed_cell.get("cell_type") != latest_cell.get("cell_type"):
+            raise CommandError(
+                f"Notebook changed while run-all was executing; cell {index} changed type, so outputs were not saved."
+            )
+        if executed_cell.get("cell_type") != "code":
+            continue
+        executed_id = executed_cell.get("id")
+        latest_id = latest_cell.get("id")
+        if executed_id and latest_id and executed_id != latest_id:
+            raise CommandError(
+                f"Notebook changed while run-all was executing; cell {index} changed identity, so outputs were not saved."
+            )
+        if (executed_cell.get("source") or "") != (latest_cell.get("source") or ""):
+            raise CommandError(
+                f"Notebook changed while run-all was executing; code cell {index} changed source, so outputs were not saved."
+            )
+        latest_cell["outputs"] = executed_cell.get("outputs", [])
+        latest_cell["execution_count"] = executed_cell.get("execution_count")
+
+    _save_notebook_content(
+        server,
+        path,
+        latest_model["content"],
+        timeout=timeout,
+        expected_last_modified=latest_model.get("last_modified"),
+    )
+
+
 def _summarize_output(output: dict[str, Any]) -> dict[str, Any]:
     output_type = output.get("output_type")
     if output_type == "stream":
@@ -1000,8 +1093,10 @@ def execute_code(
     code: str,
     transport: str,
     timeout: float,
+    save_outputs: bool = False,
+    cell_id: str | None = None,
 ) -> dict[str, Any]:
-    return _execute_request(
+    result = _execute_request(
         server,
         path=path,
         session_id=session_id,
@@ -1009,7 +1104,33 @@ def execute_code(
         request=ExecuteRequest(code=code),
         transport=transport,
         timeout=timeout,
-    ).as_dict()
+    )
+    result_dict = result.as_dict()
+
+    outputs_saved = False
+    if save_outputs and path and cell_id:
+        model = _load_notebook_model(server, path, timeout=timeout)
+        cells = model["content"].get("cells", [])
+        matched = False
+        for cell in cells:
+            if cell.get("id") == cell_id and cell.get("cell_type") == "code":
+                cell_outputs, exec_count = _events_to_notebook_outputs(result_dict.get("events") or [])
+                cell["outputs"] = cell_outputs
+                cell["execution_count"] = exec_count
+                matched = True
+                break
+        if matched:
+            _save_notebook_content(
+                server,
+                path,
+                model["content"],
+                timeout=timeout,
+                expected_last_modified=model.get("last_modified"),
+            )
+            outputs_saved = True
+
+    result_dict["outputs_saved"] = outputs_saved
+    return result_dict
 
 
 
@@ -1307,6 +1428,7 @@ def run_all_cells(
     kernel_id: str | None,
     transport: str,
     timeout: float,
+    save_outputs: bool = False,
 ) -> dict[str, Any]:
     target = _resolve_kernel_target(
         server,
@@ -1361,10 +1483,32 @@ def run_all_cells(
             "events": result.get("events"),
         }
         results.append(cell_result)
+
+        if save_outputs:
+            cell_outputs, exec_count = _events_to_notebook_outputs(result.get("events") or [])
+            cell["outputs"] = cell_outputs
+            cell["execution_count"] = exec_count
+
         if result.get("status") != "ok":
             overall_status = "error"
             failed_cell = cell_result
             break
+
+    outputs_saved = False
+    if save_outputs:
+        _save_run_all_outputs(
+            server,
+            notebook_path,
+            executed_model=model["content"],
+            timeout=timeout,
+        )
+        outputs_saved = True
+
+    note = (
+        "Run-all executed and saved outputs back to the notebook file."
+        if outputs_saved
+        else "Run-all executes against the live kernel for verification and does not persist notebook outputs."
+    )
 
     return {
         "operation": "run-all",
@@ -1381,7 +1525,8 @@ def run_all_cells(
         "skipped_cell_count": skipped_cell_count,
         "failed_cell": failed_cell,
         "cells": results,
-        "note": "Run-all executes against the live kernel for verification and does not persist notebook outputs.",
+        "outputs_saved": outputs_saved,
+        "note": note,
     }
 
 
@@ -1393,6 +1538,7 @@ def restart_and_run_all(
     kernel_id: str | None,
     transport: str,
     timeout: float,
+    save_outputs: bool = False,
 ) -> dict[str, Any]:
     target = _resolve_kernel_target(
         server,
@@ -1416,6 +1562,7 @@ def restart_and_run_all(
         kernel_id=target.kernel_id,
         transport=transport,
         timeout=timeout,
+        save_outputs=save_outputs,
     )
     return {
         "operation": "restart-run-all",
@@ -1709,6 +1856,9 @@ def build_parser() -> argparse.ArgumentParser:
     execute_parser.add_argument("--code-file")
     execute_parser.add_argument("--transport", choices=["auto", "websocket", "zmq"], default="auto")
     execute_parser.add_argument("--timeout", type=float, default=DEFAULT_EXEC_TIMEOUT)
+    execute_parser.add_argument("--save-outputs", action="store_true", help="Save cell outputs back to the notebook file. Requires --path and --cell-id. Automatically enabled when --cell-id is provided.")
+    execute_parser.add_argument("--no-save-outputs", action="store_true", help="Disable automatic output saving even when --cell-id is provided. Useful for pure REPL usage.")
+    execute_parser.add_argument("--cell-id", help="Target cell ID. When provided, outputs are automatically saved back to the notebook file unless --no-save-outputs is set.")
     execute_parser.add_argument("--compact", action="store_true")
 
     restart_parser = subparsers.add_parser("restart", help="Restart a live notebook kernel.")
@@ -1719,22 +1869,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_all_parser = subparsers.add_parser(
         "run-all",
-        help="Execute all notebook code cells against the live kernel without persisting outputs.",
+        help="Execute all notebook code cells against the live kernel.",
     )
     _add_server_selection(run_all_parser)
     _add_live_target_selection(run_all_parser)
     run_all_parser.add_argument("--transport", choices=["auto", "websocket", "zmq"], default="auto")
     run_all_parser.add_argument("--timeout", type=float, default=DEFAULT_EXEC_TIMEOUT)
+    run_all_parser.add_argument("--save-outputs", action="store_true", help="Save cell outputs back to the notebook file.")
     run_all_parser.add_argument("--compact", action="store_true")
 
     restart_run_all_parser = subparsers.add_parser(
         "restart-run-all",
-        help="Restart the live kernel and then run all notebook code cells for verification.",
+        help="Restart the live kernel and then run all notebook code cells.",
     )
     _add_server_selection(restart_run_all_parser)
     _add_live_target_selection(restart_run_all_parser)
     restart_run_all_parser.add_argument("--transport", choices=["auto", "websocket", "zmq"], default="auto")
     restart_run_all_parser.add_argument("--timeout", type=float, default=DEFAULT_EXEC_TIMEOUT)
+    restart_run_all_parser.add_argument("--save-outputs", action="store_true", help="Save cell outputs back to the notebook file.")
     restart_run_all_parser.add_argument("--compact", action="store_true")
 
     edit_parser = subparsers.add_parser("edit", help="Edit saved notebook cells through the Contents API.")
@@ -1836,7 +1988,20 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "execute":
-            code = _read_code_argument(args.code, args.code_file)
+            if args.code is None and args.code_file is None and args.cell_id and args.path:
+                # Auto-fetch cell source from notebook when --cell-id is given without --code
+                model = _load_notebook_model(server, args.path)
+                cells = model["content"].get("cells", [])
+                matched_source = None
+                for cell in cells:
+                    if cell.get("id") == args.cell_id:
+                        matched_source = cell.get("source", "")
+                        break
+                if matched_source is None:
+                    raise CommandError(f"Cell id {args.cell_id!r} not found in {args.path!r}")
+                code = matched_source
+            else:
+                code = _read_code_argument(args.code, args.code_file)
             _print(
                 execute_code(
                     server,
@@ -1846,6 +2011,8 @@ def main(argv: list[str] | None = None) -> int:
                     code=code,
                     transport=args.transport,
                     timeout=args.timeout,
+                    save_outputs=(args.save_outputs or bool(args.cell_id)) and not args.no_save_outputs,
+                    cell_id=args.cell_id,
                 ),
                 args.compact,
             )
@@ -1872,6 +2039,7 @@ def main(argv: list[str] | None = None) -> int:
                 kernel_id=args.kernel_id,
                 transport=args.transport,
                 timeout=args.timeout,
+                save_outputs=args.save_outputs,
             )
             _print(result, args.compact)
             return 0 if result.get("status") == "ok" else 1
@@ -1884,6 +2052,7 @@ def main(argv: list[str] | None = None) -> int:
                 kernel_id=args.kernel_id,
                 transport=args.transport,
                 timeout=args.timeout,
+                save_outputs=args.save_outputs,
             )
             _print(result, args.compact)
             return 0 if (result.get("run_all") or {}).get("status") == "ok" else 1
