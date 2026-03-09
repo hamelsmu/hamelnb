@@ -18,6 +18,8 @@ from unittest import mock
 
 import requests
 
+from tests.support import skill_script_command
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT_PATH = REPO_ROOT / 'skills/jupyter-live-kernel/scripts/jupyter_live_kernel.py'
 TOKEN = 'testtoken'
@@ -563,8 +565,9 @@ class JupyterLiveKernelIntegrationTests(unittest.TestCase):
         return self._run_cli_inprocess_completed(*args)
 
     def _run_cli_subprocess_completed(self, *args: str) -> subprocess.CompletedProcess[str]:
+        command = [*skill_script_command(SCRIPT_PATH), *args]
         return subprocess.run(
-            [sys.executable, str(SCRIPT_PATH), *args],
+            command,
             capture_output=True,
             text=True,
             check=False,

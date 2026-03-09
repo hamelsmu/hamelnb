@@ -7,15 +7,11 @@ Coding agents write entire scripts in one shot, then debug from the top when som
 
 `hamelnb` gives your coding agent a live Jupyter notebook kernel. Instead of generating a 200-line script and hoping it works, the agent can explore an API interactively, check return values, fix one thing at a time, and build up working code cell by cell -- the same way you would.
 
+> "Fixing 1 local bug should not require restarting the whole job."
+>
+> Inspired by [this post from Omar Khattab (@lateinteraction)](https://x.com/lateinteraction/status/2023459044648796465?s=20).
+
 It works with Claude Code and Codex.
-
-## Demo Video
-
-<!-- TODO: Replace VIDEO_URL_HERE with the published demo URL -->
-[Watch the demo video](VIDEO_URL_HERE)
-
-<!-- Optional inline preview image thumbnail -->
-<!-- [![hamelnb demo video](THUMBNAIL_IMAGE_URL_HERE)](VIDEO_URL_HERE) -->
 
 ## Use it when
 
@@ -84,11 +80,41 @@ See the [Claude Code skills docs](https://code.claude.com/docs/en/slash-commands
 Fast/default suite:
 
 ```bash
-python3 -m pytest tests/test_jupyter_live_kernel.py -v
+uv run --group dev pytest tests/test_jupyter_live_kernel.py -v
 ```
 
 Full suite (includes slow live-kernel verification scenarios):
 
 ```bash
-JLK_RUN_SLOW_INTEGRATION=1 python3 -m pytest tests/test_jupyter_live_kernel.py -v
+JLK_RUN_SLOW_INTEGRATION=1 uv run --group dev pytest tests/test_jupyter_live_kernel.py -v
+```
+
+Browser collaboration smoke test:
+
+```bash
+uv run --group dev --group browser playwright install chromium
+JLK_RUN_BROWSER_INTEGRATION=1 uv run --group dev --group browser pytest tests/test_jupyter_collaboration_refresh.py -v
+```
+
+Manual collaborative JupyterLab launch for browser-refresh debugging:
+
+```bash
+mkdir -p /tmp/jupyter-live-kernel-collab
+uv run --with jupyterlab --with jupyter-collaboration jupyter lab \
+  --no-browser \
+  --collaborative \
+  --LabApp.extension_manager=readonly \
+  --IdentityProvider.token=testtoken \
+  --ServerApp.password= \
+  --ServerApp.port=8899 \
+  --ServerApp.port_retries=0 \
+  --ServerApp.root_dir=/tmp/jupyter-live-kernel-collab
+```
+
+To keep before/after screenshots from the Playwright run:
+
+```bash
+JLK_BROWSER_ARTIFACT_DIR=/tmp/jlk-browser-artifacts \
+JLK_RUN_BROWSER_INTEGRATION=1 \
+uv run --group dev --group browser pytest tests/test_jupyter_collaboration_refresh.py -v
 ```
