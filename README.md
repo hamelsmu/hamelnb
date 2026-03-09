@@ -3,7 +3,7 @@
 [![Fast Tests](https://github.com/hamelsmu/hamelnb/actions/workflows/fast-tests.yml/badge.svg)](https://github.com/hamelsmu/hamelnb/actions/workflows/fast-tests.yml)
 [![Full Tests](https://github.com/hamelsmu/hamelnb/actions/workflows/full-tests.yml/badge.svg)](https://github.com/hamelsmu/hamelnb/actions/workflows/full-tests.yml)
 
-Coding agents write entire scripts in one shot, then debug from the top when something breaks. That's backwards. A good developer tinkers -- try a small piece, check the output, build up from there. Notebooks exist for exactly this reason.
+Coding agents write entire scripts in one shot, then debug from the top when something breaks. That works sometimes, but you might not always want to do it that way -- try a small piece, check the output, build up from there. Notebooks exist for exactly this reason.
 
 `hamelnb` gives your coding agent a live Jupyter notebook kernel. Instead of generating a 200-line script and hoping it works, the agent can explore an API interactively, check return values, fix one thing at a time, and build up working code cell by cell -- the same way you would.
 
