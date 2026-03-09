@@ -5,6 +5,7 @@ description = "Add your description here"
 requires-python = ">=3.10"
 dependencies = [
     "jupyterlab>=4.4.10",
+    "yfinance>=1.2.0",
 ]
 
 [project.optional-dependencies]

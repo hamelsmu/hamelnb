@@ -666,6 +666,7 @@ class JupyterLiveKernelIntegrationTests(unittest.TestCase):
                     kernel_id=parsed.kernel_id,
                     transport=parsed.transport,
                     timeout=parsed.timeout,
+                    save_outputs=parsed.save_outputs,
                 )
                 code = 0 if payload.get('status') == 'ok' else 1
                 return subprocess.CompletedProcess(argv, code, json.dumps(payload), '')
@@ -678,6 +679,7 @@ class JupyterLiveKernelIntegrationTests(unittest.TestCase):
                     kernel_id=parsed.kernel_id,
                     transport=parsed.transport,
                     timeout=parsed.timeout,
+                    save_outputs=parsed.save_outputs,
                 )
                 code = 0 if (payload.get('run_all') or {}).get('status') == 'ok' else 1
                 return subprocess.CompletedProcess(argv, code, json.dumps(payload), '')
@@ -1648,6 +1650,52 @@ class JupyterLiveKernelIntegrationTests(unittest.TestCase):
         )
         results = [event['data']['text/plain'] for event in execution['events'] if event['type'] == 'execute_result']
         self.assertIn('1', results)
+
+    @slow_integration_test
+    def test_restart_run_all_can_persist_outputs(self) -> None:
+        path = f'restart-run-all-save-{uuid.uuid4().hex[:8]}.ipynb'
+        self._put_notebook(
+            path,
+            [
+                {
+                    'id': 'seed-cell',
+                    'cell_type': 'code',
+                    'execution_count': None,
+                    'metadata': {},
+                    'outputs': [],
+                    'source': 'seed = 41',
+                },
+                {
+                    'id': 'result-cell',
+                    'cell_type': 'code',
+                    'execution_count': None,
+                    'metadata': {},
+                    'outputs': [],
+                    'source': 'seed + 1',
+                },
+            ],
+        )
+        self._create_session_for_path(path)
+
+        payload = self._run_cli(
+            'restart-run-all',
+            '--port',
+            str(self.port),
+            '--path',
+            path,
+            '--save-outputs',
+            '--compact',
+        )
+        self.assertEqual(payload['run_all']['status'], 'ok')
+        self.assertTrue(payload['run_all']['outputs_saved'])
+
+        contents = self._contents_with_outputs(path)
+        cells_by_id = {cell['cell_id']: cell for cell in contents['cells']}
+        self.assertIsNotNone(cells_by_id['seed-cell']['execution_count'])
+        self.assertEqual(cells_by_id['seed-cell']['outputs'], [])
+        self.assertEqual(cells_by_id['result-cell']['outputs'][0]['output_type'], 'execute_result')
+        self.assertEqual(cells_by_id['result-cell']['outputs'][0]['data']['text/plain'], '42')
+        self.assertIsNotNone(cells_by_id['result-cell']['execution_count'])
 
     @slow_integration_test
     def test_run_all_returns_nonzero_when_a_cell_fails(self) -> None:

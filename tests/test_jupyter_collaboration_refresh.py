@@ -157,6 +157,19 @@ class JupyterCollaborationRefreshTests(unittest.TestCase):
             },
         )
 
+    @classmethod
+    def _create_session(cls, path: str) -> dict[str, object]:
+        return cls._api_request(
+            "POST",
+            "/api/sessions",
+            json={
+                "path": path,
+                "type": "notebook",
+                "name": "",
+                "kernel": {"name": "python3"},
+            },
+        )
+
     @staticmethod
     def _artifact_path(name: str) -> Path | None:
         if not ARTIFACT_DIR:
@@ -222,6 +235,81 @@ class JupyterCollaborationRefreshTests(unittest.TestCase):
                 if after_shot is not None:
                     page.screenshot(path=str(after_shot), full_page=True)
 
+                self.assertEqual(navigations, navs_after_load)
+            finally:
+                browser.close()
+
+    def test_browser_updates_after_restart_run_all_save_outputs_without_reload(self) -> None:
+        path = "restart-run-all-save.ipynb"
+        self._put_notebook(
+            path,
+            [
+                {
+                    "id": "seed-cell",
+                    "cell_type": "code",
+                    "execution_count": None,
+                    "metadata": {},
+                    "outputs": [],
+                    "source": "seed = 41",
+                },
+                {
+                    "id": "result-cell",
+                    "cell_type": "code",
+                    "execution_count": None,
+                    "metadata": {},
+                    "outputs": [],
+                    "source": "seed + 1",
+                },
+            ],
+        )
+        session = self._create_session(path)
+
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            try:
+                page = browser.new_page(viewport={"width": 1440, "height": 1100})
+                navigations: list[str] = []
+                page.on(
+                    "framenavigated",
+                    lambda frame: navigations.append(frame.url) if frame == page.main_frame else None,
+                )
+
+                page.goto(
+                    f"{self.base_url}/lab/tree/{path}?token={TOKEN}",
+                    wait_until="domcontentloaded",
+                    timeout=120000,
+                )
+
+                source = page.locator(".cm-content").filter(has_text="seed + 1").first
+                expect(source).to_contain_text("seed + 1", timeout=30000)
+
+                navs_after_load = list(navigations)
+
+                result = subprocess.run(
+                    [
+                        *skill_script_command(SCRIPT_PATH),
+                        "restart-run-all",
+                        "--port",
+                        str(self.port),
+                        "--path",
+                        path,
+                        "--session-id",
+                        str(session["id"]),
+                        "--save-outputs",
+                        "--compact",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
+
+                payload = json.loads(result.stdout)
+                self.assertEqual(payload["run_all"]["status"], "ok")
+                self.assertTrue(payload["run_all"]["outputs_saved"])
+
+                output = page.locator(".jp-OutputArea-output").filter(has_text="42").first
+                expect(output).to_contain_text("42", timeout=15000)
                 self.assertEqual(navigations, navs_after_load)
             finally:
                 browser.close()

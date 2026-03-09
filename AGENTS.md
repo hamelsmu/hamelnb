@@ -109,5 +109,5 @@ Use this order unless you have a reason not to:
 - `edit clear-outputs` clears saved outputs on disk only.
 - `execute`, `restart`, `variables`, `run-all`, and `restart-run-all` target live notebook sessions.
 - `run-all` and `restart-run-all` exit non-zero when a cell fails.
-- `run-all` and `restart-run-all` do not persist outputs into the notebook.
+- `run-all` and `restart-run-all` do not persist outputs into the notebook unless `--save-outputs` is passed.
 - variable preview is bounded and avoids arbitrary `repr(...)` calls for non-scalar objects.
