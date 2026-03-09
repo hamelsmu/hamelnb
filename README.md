@@ -28,6 +28,8 @@ The agent connects to your local Jupyter server, finds running notebook sessions
 
 The agent reads the saved `.ipynb` file and executes code against the running kernel. It can edit cells, inspect Python variables, and restart the kernel when you ask for a fresh run.
 
+By default, cell outputs are saved back to the notebook file so you see results in JupyterLab as the agent works. If you only care about the result of the computation and not about updating the notebook — for example, when quickly checking a value or running a throwaway calculation — tell the agent you don't need the notebook updated. It will skip writing outputs back, which is faster.
+
 ## Install
 
 ### Codex
