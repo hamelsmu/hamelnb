@@ -55,8 +55,6 @@ claude --add-dir ~/.agent-skills/hamelnb
 
 Already in a session? Run `/add-dir ~/.agent-skills/hamelnb`.
 
-This uses Claude Code's standalone skill loading. The command is `/hamelnb`.
-
 To make the skill available in every project without `--add-dir`:
 
 ```bash
@@ -71,62 +69,35 @@ If you want to use the repo as an actual Claude plugin instead of a standalone s
 claude --plugin-dir ~/.agent-skills/hamelnb
 ```
 
-In plugin mode the command is namespaced as `/hamelnb:live-kernel`.
-
 See the [Claude Code skills docs](https://code.claude.com/docs/en/slash-commands) for more on how skills work.
 
 ## Usage
 
-The public standalone skill name is `hamelnb`.
-
 ### Claude Code
 
-Standalone skill invocation:
+Use the standalone skill directly:
 
 ```text
 /hamelnb inspect notebooks/demo.ipynb and show me the current output
 ```
 
-Keep follow-up turns conversational after the first target is clear. You do not need a `/hamelnb:<action>` convention.
+After the first target is clear, keep follow-up turns conversational.
 
-Plugin invocation:
+If you load the repo as a Claude plugin, use:
 
 ```text
 /hamelnb:live-kernel inspect notebooks/demo.ipynb and show me the current output
 ```
 
-Claude's current docs are explicit here:
-- standalone skills in `.claude/skills/<skill-name>/SKILL.md` use `/skill-name`
-- plugins with `.claude-plugin/plugin.json` use `/plugin-name:skill-name`
-
-Relevant Claude Code slash commands:
-
-- `/add-dir ~/.agent-skills/hamelnb` to load this repo's standalone skill in the current session
-- `--plugin-dir ~/.agent-skills/hamelnb` when you want the plugin form instead
-
 ### Codex
 
-Mention the skill name directly in your prompt so the agent knows to use it:
+Mention `hamelnb` directly in your prompt:
 
 ```text
 Use hamelnb to inspect notebooks/demo.ipynb and rerun only the affected cells.
 ```
 
 If more than one live notebook or session matches, the agent should ask you to choose instead of guessing.
-
-## Docs
-
-- [AGENTS.md](AGENTS.md) -- quickstart for agents working on this repo
-- [SKILL.md](skills/jupyter-live-kernel/SKILL.md) -- full command reference, limits, and transport details
-
-## Project layout
-
-- `skills/jupyter-live-kernel/scripts/jupyter_live_kernel.py` -- the main script
-- `skills/jupyter-live-kernel/references/jupyter-hooks.md` -- Jupyter API notes
-- `tests/test_jupyter_live_kernel.py` -- test suite
-- `.claude/skills/hamelnb/` -- Claude standalone skill entrypoint
-- `.claude-plugin/plugin.json` -- Claude plugin manifest
-- `skills/live-kernel/` -- Claude plugin skill entrypoint
 
 ## Running tests
 
