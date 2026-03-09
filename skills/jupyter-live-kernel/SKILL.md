@@ -7,6 +7,16 @@ description: Work against a live local Jupyter notebook kernel. Use this when an
 
 Use this skill when a local notebook kernel already holds useful state and you do not want to rerun expensive setup.
 
+## Starting JupyterLab
+
+When launching JupyterLab for use with this skill, disable token and password auth so the script can access the server API without browser session cookies:
+
+```bash
+jupyter lab --IdentityProvider.token='' --ServerApp.password=''
+```
+
+If the server is already running but returns 403 errors, restart it with these flags.
+
 ## Core Loop
 
 Run from the repo root.
