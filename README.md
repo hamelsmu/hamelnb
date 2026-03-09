@@ -9,10 +9,6 @@ Coding agents write entire scripts in one shot, then debug from the top when som
 
 ![hamelnb graphic](assets/hamelnb-live-kernel-graphic.png)
 
-> "Though bash is a completely valid REPL, the amount of time coding agents lose during experimentation because they iterate on scripts instead of a Jupyter-like in-memory REPL is basically dumb. Fixing 1 local bug should not require restarting the whole job. Need better scaffolds."
->
-> — [Omar Khattab (@lateinteraction)](https://x.com/lateinteraction/status/2023459044648796465?s=20)
-
 It works with Claude Code and Codex. In Claude Code, the standalone entrypoint is `/hamelnb`. If you load the repo as a Claude plugin, the plugin entrypoint is `/hamelnb:live-kernel`.
 
 ## Use it when
@@ -36,13 +32,26 @@ The agent reads the saved `.ipynb` file and executes code against the running ke
 
 ### Codex
 
+In the Codex app, use the Skills UI to add or manage this skill.
+
+For a direct local install:
+
 ```bash
-python3 "${CODEX_HOME:-$HOME/.codex}/skills/.system/skill-installer/scripts/install-skill-from-github.py" \
-  --repo hamelsmu/hamelnb \
-  --path skills/jupyter-live-kernel
+git clone https://github.com/hamelsmu/hamelnb.git ~/.agent-skills/hamelnb
+mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
+ln -s ~/.agent-skills/hamelnb/skills/jupyter-live-kernel "${CODEX_HOME:-$HOME/.codex}/skills/hamelnb"
 ```
 
 Then restart Codex.
+
+If you prefer the bundled installer helper:
+
+```bash
+python3 "${CODEX_HOME:-$HOME/.codex}/skills/.system/skill-installer/scripts/install-skill-from-github.py" \
+  --repo hamelsmu/hamelnb \
+  --path skills/jupyter-live-kernel \
+  --name hamelnb
+```
 
 ### Claude Code
 
