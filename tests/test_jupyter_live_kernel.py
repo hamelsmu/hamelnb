@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 import importlib.util
 import json
+import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -28,6 +30,16 @@ assert SPEC and SPEC.loader
 JUPYTER_LIVE_KERNEL = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = JUPYTER_LIVE_KERNEL
 SPEC.loader.exec_module(JUPYTER_LIVE_KERNEL)
+JUPYTER_BIN = shutil.which('jupyter')
+HAS_JUPYTER = JUPYTER_BIN is not None or importlib.util.find_spec('jupyter') is not None
+RUN_SLOW_INTEGRATION = os.environ.get('JLK_RUN_SLOW_INTEGRATION') == '1'
+
+
+def slow_integration_test(fn):
+    return unittest.skipUnless(
+        RUN_SLOW_INTEGRATION,
+        "slow integration test skipped (set JLK_RUN_SLOW_INTEGRATION=1 to include)",
+    )(fn)
 
 
 class JupyterLiveKernelUnitTests(unittest.TestCase):
@@ -112,6 +124,114 @@ class JupyterLiveKernelUnitTests(unittest.TestCase):
             )
         )
 
+    def test_ws_url_includes_token_and_session_id(self) -> None:
+        server = JUPYTER_LIVE_KERNEL.ServerInfo(
+            url='http://127.0.0.1:9999',
+            base_url='/',
+            root_dir='.',
+            token='abc123',
+        )
+        url = JUPYTER_LIVE_KERNEL._ws_url(server, 'kernel-1', session_id='session-42')
+        self.assertIn('/api/kernels/kernel-1/channels?', url)
+        self.assertIn('token=abc123', url)
+        self.assertIn('session_id=session-42', url)
+
+    def test_ensure_kernel_idle_accepts_missing_execution_state(self) -> None:
+        server = JUPYTER_LIVE_KERNEL.ServerInfo(
+            url='http://127.0.0.1:9999',
+            base_url='/',
+            root_dir='.',
+            token='',
+        )
+        with mock.patch.object(JUPYTER_LIVE_KERNEL, '_get_kernel_model', return_value={}):
+            JUPYTER_LIVE_KERNEL._ensure_kernel_idle(server, 'kernel-1', timeout=1)
+
+    def test_ensure_kernel_idle_raises_when_kernel_never_becomes_idle(self) -> None:
+        server = JUPYTER_LIVE_KERNEL.ServerInfo(
+            url='http://127.0.0.1:9999',
+            base_url='/',
+            root_dir='.',
+            token='',
+        )
+        with (
+            mock.patch.object(
+                JUPYTER_LIVE_KERNEL,
+                '_get_kernel_model',
+                return_value={'execution_state': 'busy'},
+            ),
+            mock.patch.object(JUPYTER_LIVE_KERNEL.time, 'time', side_effect=[0.0, 0.0, 0.3, 0.6, 1.2]),
+            mock.patch.object(JUPYTER_LIVE_KERNEL.time, 'sleep'),
+        ):
+            with self.assertRaises(JUPYTER_LIVE_KERNEL.CommandError) as exc_info:
+                JUPYTER_LIVE_KERNEL._ensure_kernel_idle(server, 'kernel-1', timeout=1)
+
+        self.assertIn('Timed out waiting for kernel kernel-1 to become idle before execution.', str(exc_info.exception))
+        self.assertIn("'busy'", str(exc_info.exception))
+
+    def test_websocket_execute_checks_kernel_idle_before_connecting(self) -> None:
+        server = JUPYTER_LIVE_KERNEL.ServerInfo(
+            url='http://127.0.0.1:9999',
+            base_url='/',
+            root_dir='.',
+            token='',
+        )
+        request = JUPYTER_LIVE_KERNEL.ExecuteRequest(code='1 + 1')
+        client = mock.Mock()
+        client.websocket_headers.return_value = []
+
+        with (
+            mock.patch.object(JUPYTER_LIVE_KERNEL, '_ensure_kernel_idle') as ensure_idle,
+            mock.patch.object(JUPYTER_LIVE_KERNEL, 'ServerClient', return_value=client),
+            mock.patch.object(JUPYTER_LIVE_KERNEL, '_ws_url', return_value='ws://127.0.0.1:9999/ws') as ws_url,
+            mock.patch.object(JUPYTER_LIVE_KERNEL.websocket, 'create_connection', side_effect=OSError('boom')),
+        ):
+            with self.assertRaises(JUPYTER_LIVE_KERNEL.TransportRetryUnsafeError) as exc_info:
+                JUPYTER_LIVE_KERNEL._execute_via_websocket(
+                    server,
+                    kernel_id='kernel-1',
+                    session_id='session-1',
+                    path=NOTEBOOK_PATH,
+                    request=request,
+                    timeout=12,
+                )
+
+        ensure_idle.assert_called_once_with(server, 'kernel-1', 5.0)
+        ws_url.assert_called_once_with(server, 'kernel-1', session_id='session-1')
+        self.assertFalse(exc_info.exception.request_sent)
+
+    def test_websocket_execute_timeout_after_send_is_retry_unsafe(self) -> None:
+        server = JUPYTER_LIVE_KERNEL.ServerInfo(
+            url='http://127.0.0.1:9999',
+            base_url='/',
+            root_dir='.',
+            token='',
+        )
+        request = JUPYTER_LIVE_KERNEL.ExecuteRequest(code='1 + 1')
+        client = mock.Mock()
+        client.websocket_headers.return_value = []
+        ws = mock.Mock()
+
+        with (
+            mock.patch.object(JUPYTER_LIVE_KERNEL, '_ensure_kernel_idle'),
+            mock.patch.object(JUPYTER_LIVE_KERNEL, 'ServerClient', return_value=client),
+            mock.patch.object(JUPYTER_LIVE_KERNEL, '_ws_url', return_value='ws://127.0.0.1:9999/ws'),
+            mock.patch.object(JUPYTER_LIVE_KERNEL.websocket, 'create_connection', return_value=ws),
+            mock.patch.object(JUPYTER_LIVE_KERNEL.time, 'time', side_effect=[0.0, 31.0]),
+        ):
+            with self.assertRaises(JUPYTER_LIVE_KERNEL.TransportRetryUnsafeError) as exc_info:
+                JUPYTER_LIVE_KERNEL._execute_via_websocket(
+                    server,
+                    kernel_id='kernel-1',
+                    session_id='session-1',
+                    path=NOTEBOOK_PATH,
+                    request=request,
+                    timeout=30,
+                )
+
+        ws.send.assert_called_once()
+        self.assertTrue(exc_info.exception.request_sent)
+        self.assertIn('Timed out waiting for kernel execution to finish over websocket.', str(exc_info.exception))
+
     def test_probe_server_distinguishes_auth_failure_from_unreachable(self) -> None:
         server = JUPYTER_LIVE_KERNEL.ServerInfo(
             url='http://127.0.0.1:9999',
@@ -152,11 +272,16 @@ class JupyterLiveKernelUnitTests(unittest.TestCase):
         self.assertEqual(client.request.call_count, 1)
 
 
+@unittest.skipUnless(HAS_JUPYTER, "Integration tests require the 'jupyter' command on PATH.")
 class JupyterLiveKernelIntegrationTests(unittest.TestCase):
+    SUBPROCESS_SMOKE_COMMANDS = {'servers', 'notebooks'}
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.root_dir = tempfile.TemporaryDirectory(prefix='codex-jupyter-skill.')
-        cls.log_path = Path(tempfile.mkstemp(prefix='codex-jupyter-lab.', suffix='.log')[1])
+        log_fd, log_name = tempfile.mkstemp(prefix='codex-jupyter-lab.', suffix='.log')
+        os.close(log_fd)
+        cls.log_path = Path(log_name)
         cls.log_handle = cls.log_path.open('w', encoding='utf-8')
         cls.port = cls._find_free_port()
         cls.base_url = f'http://127.0.0.1:{cls.port}'
@@ -168,6 +293,7 @@ class JupyterLiveKernelIntegrationTests(unittest.TestCase):
         cls.session_id = session['id']
         cls.kernel_id = session['kernel']['id']
         cls._seed_workspace()
+        cls.server_info = JUPYTER_LIVE_KERNEL._select_server(server_url=None, port=cls.port, timeout=5)
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -189,10 +315,10 @@ class JupyterLiveKernelIntegrationTests(unittest.TestCase):
 
     @classmethod
     def _start_server(cls) -> subprocess.Popen[str]:
+        command = [JUPYTER_BIN, 'lab'] if JUPYTER_BIN else [sys.executable, '-m', 'jupyter', 'lab']
         return subprocess.Popen(
             [
-                'jupyter',
-                'lab',
+                *command,
                 '--no-browser',
                 f'--IdentityProvider.token={TOKEN}',
                 '--ServerApp.password=',
@@ -380,7 +506,24 @@ class JupyterLiveKernelIntegrationTests(unittest.TestCase):
             'name': '',
             'kernel': {'name': 'python3'},
         }
-        return cls._api_request('POST', '/api/sessions', json=payload)
+        session = cls._api_request('POST', '/api/sessions', json=payload)
+        # Best-effort readiness probe to avoid racing immediately after session create.
+        # Some server versions may omit execution_state transiently; don't burn full timeout.
+        kernel_id = session['kernel']['id']
+        deadline = time.time() + 2
+        while time.time() < deadline:
+            resp = requests.get(
+                f'{cls.base_url}/api/kernels/{kernel_id}',
+                params={'token': TOKEN}, headers=cls.headers, timeout=5,
+            )
+            if not resp.ok:
+                time.sleep(0.1)
+                continue
+            state = resp.json().get('execution_state')
+            if state in {None, 'idle'}:
+                break
+            time.sleep(0.1)
+        return session
 
     @classmethod
     def _seed_workspace(cls) -> None:
@@ -415,12 +558,195 @@ class JupyterLiveKernelIntegrationTests(unittest.TestCase):
         return json.loads(completed.stdout)
 
     def _run_cli_completed(self, *args: str) -> subprocess.CompletedProcess[str]:
+        if args and args[0] in self.SUBPROCESS_SMOKE_COMMANDS:
+            return self._run_cli_subprocess_completed(*args)
+        return self._run_cli_inprocess_completed(*args)
+
+    def _run_cli_subprocess_completed(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [sys.executable, str(SCRIPT_PATH), *args],
             capture_output=True,
             text=True,
             check=False,
+            timeout=30,
         )
+
+    def _server_for_args(self, args) -> object:
+        if args.server_url:
+            return JUPYTER_LIVE_KERNEL._select_server(server_url=args.server_url, port=args.port, timeout=args.timeout)
+        if args.port == self.port:
+            return self.server_info
+        return JUPYTER_LIVE_KERNEL._select_server(server_url=args.server_url, port=args.port, timeout=args.timeout)
+
+    def _run_cli_inprocess_completed(self, *raw_args: str) -> subprocess.CompletedProcess[str]:
+        args = list(raw_args)
+        command = args[0] if args else ''
+        if command in {'execute', 'run-all', 'restart-run-all'} and '--transport' not in args:
+            args.extend(['--transport', 'zmq'])
+        if command in {'restart', 'run-all', 'restart-run-all'} and '--timeout' not in args:
+            args.extend(['--timeout', '10'])
+        argv = [str(SCRIPT_PATH), *args]
+        parser = JUPYTER_LIVE_KERNEL.build_parser()
+        try:
+            parsed = parser.parse_args(args)
+        except SystemExit as exc:
+            return subprocess.CompletedProcess(argv, int(exc.code), '', '')
+
+        server_token: str | None = None
+        try:
+            if parsed.command == 'servers':
+                payload = {'servers': JUPYTER_LIVE_KERNEL.discover_servers(timeout=parsed.timeout)}
+                return subprocess.CompletedProcess(argv, 0, json.dumps(payload), '')
+
+            server = self._server_for_args(parsed)
+            server_token = getattr(server, 'token', None)
+
+            if parsed.command == 'notebooks':
+                payload = JUPYTER_LIVE_KERNEL.combined_open_notebooks(server, timeout=parsed.timeout)
+                return subprocess.CompletedProcess(argv, 0, json.dumps(payload), '')
+
+            if parsed.command == 'contents':
+                payload = JUPYTER_LIVE_KERNEL.get_contents(
+                    server,
+                    parsed.path,
+                    include_outputs=parsed.include_outputs,
+                    raw=parsed.raw,
+                    timeout=parsed.timeout,
+                )
+                return subprocess.CompletedProcess(argv, 0, json.dumps(payload), '')
+
+            if parsed.command == 'execute':
+                payload = JUPYTER_LIVE_KERNEL.execute_code(
+                    server,
+                    path=parsed.path,
+                    session_id=parsed.session_id,
+                    kernel_id=parsed.kernel_id,
+                    code=JUPYTER_LIVE_KERNEL._read_code_argument(parsed.code, parsed.code_file),
+                    transport=parsed.transport,
+                    timeout=parsed.timeout,
+                )
+                return subprocess.CompletedProcess(argv, 0, json.dumps(payload), '')
+
+            if parsed.command == 'restart':
+                payload = JUPYTER_LIVE_KERNEL.restart_kernel(
+                    server,
+                    path=parsed.path,
+                    session_id=parsed.session_id,
+                    kernel_id=parsed.kernel_id,
+                    timeout=parsed.timeout,
+                )
+                return subprocess.CompletedProcess(argv, 0, json.dumps(payload), '')
+
+            if parsed.command == 'run-all':
+                payload = JUPYTER_LIVE_KERNEL.run_all_cells(
+                    server,
+                    path=parsed.path,
+                    session_id=parsed.session_id,
+                    kernel_id=parsed.kernel_id,
+                    transport=parsed.transport,
+                    timeout=parsed.timeout,
+                )
+                code = 0 if payload.get('status') == 'ok' else 1
+                return subprocess.CompletedProcess(argv, code, json.dumps(payload), '')
+
+            if parsed.command == 'restart-run-all':
+                payload = JUPYTER_LIVE_KERNEL.restart_and_run_all(
+                    server,
+                    path=parsed.path,
+                    session_id=parsed.session_id,
+                    kernel_id=parsed.kernel_id,
+                    transport=parsed.transport,
+                    timeout=parsed.timeout,
+                )
+                code = 0 if (payload.get('run_all') or {}).get('status') == 'ok' else 1
+                return subprocess.CompletedProcess(argv, code, json.dumps(payload), '')
+
+            if parsed.command == 'edit':
+                if parsed.edit_command == 'replace-source':
+                    payload = JUPYTER_LIVE_KERNEL.edit_cell_source(
+                        server,
+                        path=parsed.path,
+                        index=parsed.index,
+                        cell_id=parsed.cell_id,
+                        source=JUPYTER_LIVE_KERNEL._read_source_argument(parsed.source, parsed.source_file),
+                        timeout=parsed.timeout,
+                    )
+                elif parsed.edit_command == 'insert':
+                    payload = JUPYTER_LIVE_KERNEL.insert_cell(
+                        server,
+                        path=parsed.path,
+                        cell_type=parsed.cell_type,
+                        source=JUPYTER_LIVE_KERNEL._read_source_argument(parsed.source, parsed.source_file),
+                        at_index=JUPYTER_LIVE_KERNEL._resolve_insert_index(parsed),
+                        timeout=parsed.timeout,
+                    )
+                elif parsed.edit_command == 'delete':
+                    payload = JUPYTER_LIVE_KERNEL.delete_cell(
+                        server,
+                        path=parsed.path,
+                        index=parsed.index,
+                        cell_id=parsed.cell_id,
+                        timeout=parsed.timeout,
+                    )
+                elif parsed.edit_command == 'move':
+                    payload = JUPYTER_LIVE_KERNEL.move_cell(
+                        server,
+                        path=parsed.path,
+                        index=parsed.index,
+                        cell_id=parsed.cell_id,
+                        to_index=parsed.to_index,
+                        timeout=parsed.timeout,
+                    )
+                else:
+                    payload = JUPYTER_LIVE_KERNEL.clear_cell_outputs(
+                        server,
+                        path=parsed.path,
+                        index=parsed.index,
+                        cell_id=parsed.cell_id,
+                        all_cells=parsed.all,
+                        timeout=parsed.timeout,
+                    )
+                return subprocess.CompletedProcess(argv, 0, json.dumps(payload), '')
+
+            if parsed.command == 'variables':
+                if parsed.variables_command == 'list':
+                    payload = JUPYTER_LIVE_KERNEL.list_variables(
+                        server,
+                        path=parsed.path,
+                        session_id=parsed.session_id,
+                        kernel_id=parsed.kernel_id,
+                        transport=parsed.transport,
+                        timeout=parsed.timeout,
+                        limit=parsed.limit,
+                        include_private=parsed.include_private,
+                        include_callables=parsed.include_callables,
+                    )
+                else:
+                    payload = JUPYTER_LIVE_KERNEL.preview_variable(
+                        server,
+                        path=parsed.path,
+                        session_id=parsed.session_id,
+                        kernel_id=parsed.kernel_id,
+                        transport=parsed.transport,
+                        timeout=parsed.timeout,
+                        name=parsed.name,
+                        max_chars=parsed.max_chars,
+                    )
+                return subprocess.CompletedProcess(argv, 0, json.dumps(payload), '')
+        except JUPYTER_LIVE_KERNEL.CommandError as exc:
+            payload = json.dumps(
+                {'error': JUPYTER_LIVE_KERNEL._sanitize_error_text(str(exc), server_token=server_token)},
+                indent=2,
+            )
+            return subprocess.CompletedProcess(argv, 1, '', payload)
+        except Exception as exc:
+            payload = json.dumps(
+                {'error': JUPYTER_LIVE_KERNEL._sanitize_error_text(f'Unexpected error: {exc}', server_token=server_token)},
+                indent=2,
+            )
+            return subprocess.CompletedProcess(argv, 1, '', payload)
+
+        return subprocess.CompletedProcess(argv, 1, '', json.dumps({'error': 'Unsupported command.'}))
 
     def _run_cli_error(self, *args: str) -> dict[str, object]:
         completed = self._run_cli_completed(*args)
@@ -863,6 +1189,7 @@ class JupyterLiveKernelIntegrationTests(unittest.TestCase):
         self.assertIn('Patch applied', cells_by_id[inserted_id]['source'])
         self.assertLess(ordered_ids.index(inserted_id), ordered_ids.index('analysis-md'))
 
+    @slow_integration_test
     def test_demo_workflow_reuses_live_kernel_state_after_patching_a_buggy_cell(self) -> None:
         path = f'demo-workflow-{uuid.uuid4().hex[:8]}.ipynb'
         setup_source = textwrap.dedent(
@@ -1110,6 +1437,7 @@ class JupyterLiveKernelIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(self._last_execute_result_value(post_verify), {'margin': 0.387, 'cold_setup_runs': 1})
 
+    @slow_integration_test
     def test_execute_over_websocket(self) -> None:
         payload = self._run_cli(
             'execute',
@@ -1150,6 +1478,7 @@ class JupyterLiveKernelIntegrationTests(unittest.TestCase):
         self.assertIn('zmq ok\n', texts)
         self.assertIn('42', results)
 
+    @slow_integration_test
     def test_restart_clears_live_kernel_state(self) -> None:
         path = f'restart-{uuid.uuid4().hex[:8]}.ipynb'
         self._put_notebook(
@@ -1191,6 +1520,7 @@ class JupyterLiveKernelIntegrationTests(unittest.TestCase):
         results = [event['data']['text/plain'] for event in payload['events'] if event['type'] == 'execute_result']
         self.assertIn('False', results)
 
+    @slow_integration_test
     def test_run_all_executes_cells_in_order_without_persisting_outputs(self) -> None:
         path = f'run-all-{uuid.uuid4().hex[:8]}.ipynb'
         self._put_notebook(
@@ -1246,6 +1576,7 @@ class JupyterLiveKernelIntegrationTests(unittest.TestCase):
         self.assertEqual(contents['cells'][2]['outputs'], [])
         self.assertIsNone(contents['cells'][2]['execution_count'])
 
+    @slow_integration_test
     def test_restart_run_all_rebuilds_notebook_state(self) -> None:
         path = f'restart-run-all-{uuid.uuid4().hex[:8]}.ipynb'
         self._put_notebook(
@@ -1297,6 +1628,7 @@ class JupyterLiveKernelIntegrationTests(unittest.TestCase):
         results = [event['data']['text/plain'] for event in execution['events'] if event['type'] == 'execute_result']
         self.assertIn('1', results)
 
+    @slow_integration_test
     def test_run_all_returns_nonzero_when_a_cell_fails(self) -> None:
         path = f'run-all-fail-{uuid.uuid4().hex[:8]}.ipynb'
         self._put_notebook(
@@ -1326,6 +1658,7 @@ class JupyterLiveKernelIntegrationTests(unittest.TestCase):
         self.assertEqual(payload['status'], 'error')
         self.assertEqual(payload['failed_cell']['cell_id'], 'fail-cell')
 
+    @slow_integration_test
     def test_restart_run_all_returns_nonzero_when_a_cell_fails(self) -> None:
         path = f'restart-run-all-fail-{uuid.uuid4().hex[:8]}.ipynb'
         self._put_notebook(
@@ -1355,6 +1688,7 @@ class JupyterLiveKernelIntegrationTests(unittest.TestCase):
         self.assertEqual(payload['run_all']['status'], 'error')
         self.assertEqual(payload['run_all']['failed_cell']['cell_id'], 'fail-cell')
 
+    @slow_integration_test
     def test_variables_list_and_preview(self) -> None:
         path = f'variables-{uuid.uuid4().hex[:8]}.ipynb'
         self._put_notebook(

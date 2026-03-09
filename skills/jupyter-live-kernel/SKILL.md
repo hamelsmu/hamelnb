@@ -56,6 +56,38 @@ Core guidance:
 - Use `execute` for the normal loop.
 - Keep `restart`, `run-all`, and `restart-run-all` for explicit verification or reset requests, not routine iteration.
 
+## Target Selection And Ambiguity
+
+Always make the live target explicit before edits or execution. Never guess when more than one live option exists.
+
+Required behavior:
+1. Resolve server first.
+   - If multiple reachable servers are discovered, ask the user to choose one.
+   - After selection, pass `--port` (or `--server-url`) on all follow-up commands.
+2. Resolve notebook path second.
+   - If the user already specified `--path`, use it.
+   - Otherwise run `notebooks` for the selected server and collect candidates.
+   - If there is exactly one live notebook, state it explicitly and proceed.
+   - If there are multiple notebook candidates, ask the user to choose one.
+3. Resolve session/kernel when needed.
+   - If multiple live sessions exist for the chosen path, ask the user to choose a session.
+   - Then pass `--session-id` on execute/restart/run-all/variables commands to pin the exact kernel.
+
+Claude Code ambiguity flow:
+- Use `AskUserQuestion` for each ambiguity point (server, notebook, session) as a picker.
+- Keep each picker to one short question with a short header (`Server`, `Notebook`, `Session`).
+- Option labels must include enough context to disambiguate:
+  - Server: `port`, `base URL`.
+  - Notebook: `path`, `port`.
+  - Session: `session id`, `kernel id`, `path`.
+- After selection, confirm in plain language (for example: `Using port 8888, notebook notebooks/tiny-demo.ipynb, session 1234...`), then continue.
+
+Codex ambiguity flow:
+- Ask a direct clarifying question in plain text listing candidates.
+- Continue only after the user confirms a specific target.
+
+Once selected, keep using the same `port + path` and, when applicable, `session_id` until the user asks to switch.
+
 ## Advanced
 
 Inspect live Python-kernel variables:
@@ -105,5 +137,5 @@ Prefer `auto` unless you are debugging transport behavior.
 
 ## Resources
 
-- Script: [jupyter_live_kernel.py](/Users/hamel/git/hamelnb/skills/jupyter-live-kernel/scripts/jupyter_live_kernel.py)
-- Architecture notes: [jupyter-hooks.md](/Users/hamel/git/hamelnb/skills/jupyter-live-kernel/references/jupyter-hooks.md)
+- Script: [jupyter_live_kernel.py](scripts/jupyter_live_kernel.py)
+- Architecture notes: [jupyter-hooks.md](references/jupyter-hooks.md)

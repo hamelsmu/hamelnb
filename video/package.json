@@ -17,6 +17,7 @@
     "remotion": "4.0.434"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@remotion/cli": "4.0.434",
     "typescript": "5.9.2"
   }

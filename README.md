@@ -1,52 +1,42 @@
 # hamelnb
 
-`hamelnb` lets a coding agent work with a live local notebook.
+[![Fast Tests](https://github.com/hamelsmu/hamelnb/actions/workflows/fast-tests.yml/badge.svg)](https://github.com/hamelsmu/hamelnb/actions/workflows/fast-tests.yml)
+[![Full Tests](https://github.com/hamelsmu/hamelnb/actions/workflows/full-tests.yml/badge.svg)](https://github.com/hamelsmu/hamelnb/actions/workflows/full-tests.yml)
 
-It helps when part of your workflow takes a long time to run and you do not want every small fix to start over.
+Coding agents write entire scripts in one shot, then debug from the top when something breaks. That's backwards. A good developer tinkers -- try a small piece, check the output, build up from there. Notebooks exist for exactly this reason.
 
-Notebooks are useful for data analysis, debugging, and exploratory work. This skill brings that workflow into a coding agent without asking you to leave the tools you already use.
+`hamelnb` gives your coding agent a live Jupyter notebook kernel. Instead of generating a 200-line script and hoping it works, the agent can explore an API interactively, check return values, fix one thing at a time, and build up working code cell by cell -- the same way you would.
 
-Use it when:
-- some notebook steps are slow and you want to keep that work alive
-- you want your coding agent to inspect or edit notebook cells
-- you want to test a change against the live notebook state instead of rerunning everything
-- you want an explicit reset or verification pass at the end
+It works with Claude Code and Codex.
 
-What it does:
-- finds local notebook sessions
-- reads saved notebook contents
-- edits notebook cells
-- runs code in the live notebook kernel
-- inspects live Python variables
-- clears saved outputs
-- restarts and verifies notebooks when you ask for it
+## Demo Video
 
-Start here:
-- [AGENTS.md](/Users/hamel/git/hamelnb/AGENTS.md) for the shortest operator path
-- [SKILL.md](/Users/hamel/git/hamelnb/skills/jupyter-live-kernel/SKILL.md) for command behavior and limits
+<!-- TODO: Replace VIDEO_URL_HERE with the published demo URL -->
+[Watch the demo video](VIDEO_URL_HERE)
 
-## How It Works
+<!-- Optional inline preview image thumbnail -->
+<!-- [![hamelnb demo video](THUMBNAIL_IMAGE_URL_HERE)](VIDEO_URL_HERE) -->
 
-The skill connects to a local Jupyter server, finds live notebook sessions, reads the saved notebook file, and sends code to the running kernel.
+## Use it when
 
-That gives an agent two useful modes:
-- the normal loop: inspect, edit, run a small change, inspect variables, repeat
-- the verification loop: restart and run the notebook from the top when you explicitly want a fresh check
+- You're hitting an unfamiliar API and want the agent to actually try things before writing the final code
+- A data pipeline takes minutes to run and you don't want every small fix to start from scratch
+- You want the agent to inspect live variables -- DataFrames, model outputs, intermediate results -- not just guess at what they look like
+- You want to build something up incrementally in a notebook, then clean it up into a script once it works
 
-Key limits:
-- notebook reads come from the saved `.ipynb`, not unsaved browser edits in JupyterLab
-- workspace-derived notebook tabs are a persisted JupyterLab snapshot and may include historical workspaces for the same relative path
-- `run-all` and `restart-run-all` verify a saved snapshot loaded at the start and do not persist outputs
-- variable inspection is Python-only and preview is intentionally bounded
-- this project targets local Jupyter servers
+## How it works
 
-This skill works with both Codex and Claude Code. The install steps differ only because each tool uses a different skills directory.
+The agent connects to your local Jupyter server, finds running notebook sessions, and sends code to the live kernel. Think of it as giving the agent the same notebook workflow you already use:
 
-## Install the Skill
+1. **Explore:** run small snippets, check outputs, inspect variables
+2. **Build up:** edit cells, re-run just what changed, keep accumulated state
+3. **Verify:** restart and run everything from the top when you're ready for a clean check
+
+The agent reads the saved `.ipynb` file and executes code against the running kernel. It can edit cells, inspect Python variables, and restart the kernel when you ask for a fresh run.
+
+## Install
 
 ### Codex
-
-Codex has a built-in GitHub skill installer. Install the skill directly from this repo:
 
 ```bash
 python3 "${CODEX_HOME:-$HOME/.codex}/skills/.system/skill-installer/scripts/install-skill-from-github.py" \
@@ -58,18 +48,16 @@ Then restart Codex.
 
 ### Claude Code
 
-Claude Code loads skills from `.claude/skills/`, including repos you add with `--add-dir`.
-
-Clone this repo somewhere stable, then add it when you start Claude Code:
+Clone the repo and point Claude Code at it:
 
 ```bash
 git clone https://github.com/hamelsmu/hamelnb.git ~/.agent-skills/hamelnb
 claude --add-dir ~/.agent-skills/hamelnb
 ```
 
-If you are already in a Claude Code session, run `/add-dir ~/.agent-skills/hamelnb`.
+Already in a session? Run `/add-dir ~/.agent-skills/hamelnb`.
 
-If you want the skill available in every project without `--add-dir`, symlink it into `~/.claude/skills/`:
+To make the skill available in every project without `--add-dir`:
 
 ```bash
 git clone https://github.com/hamelsmu/hamelnb.git ~/.agent-skills/hamelnb
@@ -77,19 +65,30 @@ mkdir -p ~/.claude/skills
 ln -s ~/.agent-skills/hamelnb/.claude/skills/jupyter-live-kernel ~/.claude/skills/jupyter-live-kernel
 ```
 
-Reference:
-- [Claude Code skills docs](https://code.claude.com/docs/en/slash-commands)
+See the [Claude Code skills docs](https://code.claude.com/docs/en/slash-commands) for more on how skills work.
 
-## Project Layout
+## Docs
 
-- `.claude/skills/jupyter-live-kernel/`: Claude Code entrypoint for the shared skill
-- `skills/jupyter-live-kernel/`: the shared skill files
-- `skills/jupyter-live-kernel/scripts/jupyter_live_kernel.py`: discovery, edit, execution, verification, and variable commands
-- `skills/jupyter-live-kernel/references/jupyter-hooks.md`: Jupyter API and extension notes
-- `tests/test_jupyter_live_kernel.py`: unit and end-to-end coverage
+- [AGENTS.md](AGENTS.md) -- quickstart for agents working on this repo
+- [SKILL.md](skills/jupyter-live-kernel/SKILL.md) -- full command reference, limits, and transport details
 
-## Running Tests
+## Project layout
+
+- `skills/jupyter-live-kernel/scripts/jupyter_live_kernel.py` -- the main script
+- `skills/jupyter-live-kernel/references/jupyter-hooks.md` -- Jupyter API notes
+- `tests/test_jupyter_live_kernel.py` -- test suite
+- `.claude/skills/jupyter-live-kernel/` -- Claude Code entrypoint
+
+## Running tests
+
+Fast/default suite:
 
 ```bash
-python3 -m unittest -v tests/test_jupyter_live_kernel.py
+python3 -m pytest tests/test_jupyter_live_kernel.py -v
+```
+
+Full suite (includes slow live-kernel verification scenarios):
+
+```bash
+JLK_RUN_SLOW_INTEGRATION=1 python3 -m pytest tests/test_jupyter_live_kernel.py -v
 ```
