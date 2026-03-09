@@ -170,6 +170,24 @@ class JupyterLiveKernelUnitTests(unittest.TestCase):
         self.assertIn('Timed out waiting for kernel kernel-1 to become idle before execution.', str(exc_info.exception))
         self.assertIn("'busy'", str(exc_info.exception))
 
+    def test_ensure_kernel_idle_allows_starting_state_to_age_out(self) -> None:
+        server = JUPYTER_LIVE_KERNEL.ServerInfo(
+            url='http://127.0.0.1:9999',
+            base_url='/',
+            root_dir='.',
+            token='',
+        )
+        with (
+            mock.patch.object(
+                JUPYTER_LIVE_KERNEL,
+                '_get_kernel_model',
+                return_value={'execution_state': 'starting'},
+            ),
+            mock.patch.object(JUPYTER_LIVE_KERNEL.time, 'time', side_effect=[0.0, 0.0, 0.3, 0.6, 1.2]),
+            mock.patch.object(JUPYTER_LIVE_KERNEL.time, 'sleep'),
+        ):
+            JUPYTER_LIVE_KERNEL._ensure_kernel_idle(server, 'kernel-1', timeout=1)
+
     def test_websocket_execute_checks_kernel_idle_before_connecting(self) -> None:
         server = JUPYTER_LIVE_KERNEL.ServerInfo(
             url='http://127.0.0.1:9999',
