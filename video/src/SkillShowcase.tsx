@@ -21,10 +21,12 @@ const {fontFamily: monoFont} = loadMonoFont('normal', {
   subsets: ['latin'],
 });
 
-type TranscriptLineKind = 'prompt' | 'tools' | 'reply';
+type TranscriptLineKind = 'prompt' | 'plan' | 'tools' | 'reply';
 
 type Operation = {
   prompt: string;
+  planText?: string;
+  planStart?: number;
   typeStart: number;
   typeEnd: number;
   submitFrame: number;
@@ -36,6 +38,7 @@ type Operation = {
   replyText: string;
   toolsCalled: number;
   toolDetails: string;
+  thinkingLines: string[];
 };
 
 type TranscriptLine = {
@@ -68,12 +71,12 @@ const TRANSITIONS = {
   toState9: [566, 582] as const,
 };
 
-const TARGET_NOTEBOOK_PATH = 'notebooks/tiny-demo.ipynb';
+const TARGET_NOTEBOOK_PATH = '/tmp/jupyter-live-kernel-demo/demo.ipynb';
 const TARGET_NOTEBOOK_PORT = 8888;
 
 const OPERATIONS: Operation[] = [
   {
-    prompt: 'run the value demo notebook',
+    prompt: 'what is current base? run only needed cells',
     typeStart: 24,
     typeEnd: 78,
     submitFrame: 86,
@@ -82,13 +85,13 @@ const OPERATIONS: Operation[] = [
     toolsStart: 166,
     toolsEnd: 188,
     doneFrame: 214,
-    replyText:
-      'Confirmed via notebook picker: notebooks/tiny-demo.ipynb. Ran cell [2] (`value`) and got output 1.',
-    toolsCalled: 3,
-    toolDetails: 'notebooks, AskUserQuestion, execute',
+    replyText: 'Done. Base output is 1.',
+    toolsCalled: 4,
+    toolDetails: 'notebooks, AskUserQuestion, execute x3',
+    thinkingLines: ['Resolve notebook target', 'Run setup/base cells', 'Read current output'],
   },
   {
-    prompt: 'change value from 1 to 2 and rerun value',
+    prompt: 'add a new cell: base * multiplier, then run it',
     typeStart: 228,
     typeEnd: 280,
     submitFrame: 288,
@@ -97,12 +100,15 @@ const OPERATIONS: Operation[] = [
     toolsStart: 360,
     toolsEnd: 386,
     doneFrame: 416,
-    replyText: 'Updated value from 1 to 2, reran, and confirmed the new output is 2.',
+    replyText: 'Done. New cell output is 5.',
     toolsCalled: 2,
     toolDetails: 'edit, execute',
+    thinkingLines: ['Add calculation cell', 'Run only new cell', 'Read output 5'],
   },
   {
-    prompt: 'add a new cell: value * 5, then run it',
+    prompt: 'make the final output 10',
+    planText: 'plan: update base to 2, then rerun only dependent cells',
+    planStart: 504,
     typeStart: 430,
     typeEnd: 492,
     submitFrame: 500,
@@ -111,33 +117,47 @@ const OPERATIONS: Operation[] = [
     toolsStart: 546,
     toolsEnd: 570,
     doneFrame: 596,
-    replyText: 'Added a new cell with value * 5, ran it, and got output 10.',
-    toolsCalled: 2,
-    toolDetails: 'add-cell, execute',
+    replyText: 'Done. Reran dependent cells only; final output is 10.',
+    toolsCalled: 3,
+    toolDetails: 'edit, execute x3',
+    thinkingLines: ['Read output: 5', 'Multiplier is 5, target is 10 -> base must be 2', 'Edit base and rerun dependent cells'],
   },
 ];
 
-const transcriptLines: TranscriptLine[] = OPERATIONS.flatMap((op) => [
-  {
-    text: `> ${op.prompt}`,
-    kind: 'prompt',
-    start: op.submitFrame,
-    speed: 4.2,
-  },
-  {
-    text: `..called ${op.toolsCalled} tools`,
-    kind: 'tools',
-    start: op.doneFrame,
-    speed: 4.2,
-    details: op.toolDetails,
-  },
-  {
-    text: op.replyText,
-    kind: 'reply',
-    start: op.doneFrame + 16,
-    speed: 4.2,
-  },
-]);
+const transcriptLines: TranscriptLine[] = OPERATIONS.flatMap((op) => {
+  const lines: TranscriptLine[] = [
+    {
+      text: `> ${op.prompt}`,
+      kind: 'prompt',
+      start: op.submitFrame,
+      speed: 4.2,
+    },
+  ];
+  if (op.planText && typeof op.planStart === 'number') {
+    lines.push({
+      text: op.planText,
+      kind: 'plan',
+      start: op.planStart,
+      speed: 7.8,
+    });
+  }
+  lines.push(
+    {
+      text: `..called ${op.toolsCalled} tools`,
+      kind: 'tools',
+      start: op.doneFrame,
+      speed: 4.2,
+      details: op.toolDetails,
+    },
+    {
+      text: op.replyText,
+      kind: 'reply',
+      start: op.doneFrame + 16,
+      speed: 4.2,
+    },
+  );
+  return lines;
+});
 
 const clamp = (value: number) => Math.max(0, Math.min(1, value));
 
@@ -154,6 +174,8 @@ const lineColor = (kind: TranscriptLineKind) => {
   switch (kind) {
     case 'prompt':
       return '#f6f1e7';
+    case 'plan':
+      return '#cde9ff';
     case 'tools':
       return '#9eb0be';
     case 'reply':
@@ -166,6 +188,9 @@ const lineColor = (kind: TranscriptLineKind) => {
 const lineBackground = (kind: TranscriptLineKind) => {
   if (kind === 'tools') {
     return 'rgba(89, 118, 139, 0.16)';
+  }
+  if (kind === 'plan') {
+    return 'rgba(87, 159, 214, 0.16)';
   }
   if (kind === 'reply') {
     return 'rgba(69, 216, 201, 0.08)';
@@ -267,7 +292,7 @@ const HeaderBar = ({frame}: {frame: number}) => {
             maxWidth: 980,
           }}
         >
-          Explore, edit, and rerun incrementally without restarting whole scripts.
+          Run only affected cells and use fresh outputs to steer the next edit.
         </div>
       </div>
     </div>
@@ -288,11 +313,38 @@ const TerminalPane = ({frame}: {frame: number}) => {
   const composing = composingOperation(frame);
   const composerText = composing ? typedPromptText(composing, frame) : '';
   const showCursor = composerText.length > 0 && Math.floor(frame / 8) % 2 === 0;
+  const isComposing = Boolean(composing);
+  const composePulse = 0.65 + 0.35 * (0.5 + 0.5 * Math.sin(frame * 0.36));
   const status = statusText(frame);
   const isThinking = Boolean(status?.startsWith('Thinking'));
   const busy = isBusy(frame);
   const executingOp = activeOperation(frame);
   const executingPromptStart = executingOp ? executingOp.submitFrame : -1;
+  const activeStepText = (() => {
+    if (!executingOp || executingOp.thinkingLines.length === 0) {
+      return '';
+    }
+    const span = Math.max(1, executingOp.toolsStart - executingOp.thinkingStart);
+    const progress = clamp((frame - executingOp.thinkingStart) / span);
+    const stepIndex = Math.min(
+      executingOp.thinkingLines.length - 1,
+      Math.floor(progress * executingOp.thinkingLines.length),
+    );
+    return executingOp.thinkingLines[stepIndex] ?? '';
+  })();
+  const statusDetailOpacity = executingOp
+    ? clamp(
+        interpolate(
+          frame,
+          [executingOp.thinkingStart, executingOp.thinkingStart + 10, executingOp.toolsStart + 20, executingOp.toolsStart + 28],
+          [0, 1, 1, 0],
+          {
+            extrapolateLeft: 'clamp',
+            extrapolateRight: 'clamp',
+          },
+        ),
+      )
+    : 0;
 
   return (
     <PanelShell
@@ -456,8 +508,9 @@ const TerminalPane = ({frame}: {frame: number}) => {
                     minWidth: 0,
                     flex: 1,
                     fontFamily: line.kind === 'reply' ? displayFont : monoFont,
-                    fontSize: line.kind === 'reply' ? 16 : isToolLine ? 15 : 17,
-                    fontWeight: line.kind === 'reply' ? 500 : 400,
+                    fontSize:
+                      line.kind === 'reply' ? 16 : line.kind === 'plan' ? 15 : isToolLine ? 15 : 17,
+                    fontWeight: line.kind === 'reply' ? 500 : line.kind === 'plan' ? 600 : 400,
                     color: lineColor(line.kind),
                     lineHeight: line.kind === 'reply' ? 1.2 : 1.35,
                     whiteSpace: line.kind === 'reply' ? 'normal' : 'pre',
@@ -484,7 +537,36 @@ const TerminalPane = ({frame}: {frame: number}) => {
           })}
         </div>
 
-        <div style={{height: 36, display: 'flex', alignItems: 'center', padding: '2px 8px 0 8px'}}>
+        <div style={{minHeight: 72, display: 'flex', alignItems: 'flex-start', padding: '2px 8px 0 8px'}}>
+          {executingOp ? (
+            <div
+              style={{
+                marginRight: 14,
+                padding: '8px 10px',
+                borderRadius: 10,
+                border: `1px solid ${COLORS.panelBorder}`,
+                background: 'rgba(255, 255, 255, 0.02)',
+                minWidth: 0,
+                flex: 1,
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: monoFont,
+                  fontSize: 13,
+                  lineHeight: 1.35,
+                  color: '#9db2c1',
+                  opacity: statusDetailOpacity,
+                  height: 18,
+                  overflow: 'hidden',
+                  whiteSpace: 'nowrap',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {activeStepText ? `Agent: ${activeStepText}...` : ''}
+              </div>
+            </div>
+          ) : null}
           {status ? (
             <div
               style={{
@@ -518,8 +600,13 @@ const TerminalPane = ({frame}: {frame: number}) => {
             style={{
               height: 58,
               borderRadius: 14,
-              border: `1px solid ${COLORS.panelBorder}`,
-              background: 'rgba(6, 13, 20, 0.88)',
+              border: isComposing
+                ? `1px solid rgba(248, 206, 114, ${0.58 * composePulse})`
+                : `1px solid ${COLORS.panelBorder}`,
+              background: isComposing ? 'rgba(13, 26, 36, 0.94)' : 'rgba(6, 13, 20, 0.88)',
+              boxShadow: isComposing
+                ? `0 0 0 1px rgba(248, 206, 114, ${0.25 * composePulse}), 0 0 20px rgba(248, 206, 114, ${0.22 * composePulse})`
+                : 'none',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -537,7 +624,7 @@ const TerminalPane = ({frame}: {frame: number}) => {
             >
               <div
                 style={{
-                  color: COLORS.amber,
+                  color: isComposing ? '#ffd98f' : COLORS.amber,
                   fontFamily: monoFont,
                   fontSize: 18,
                   fontWeight: 700,
@@ -547,7 +634,7 @@ const TerminalPane = ({frame}: {frame: number}) => {
               </div>
               <div
                 style={{
-                  color: composerText ? '#e9f0f5' : '#748796',
+                  color: composerText ? '#e9f0f5' : isComposing ? '#95aab9' : '#748796',
                   fontFamily: monoFont,
                   fontSize: 16,
                   whiteSpace: 'nowrap',
@@ -562,8 +649,10 @@ const TerminalPane = ({frame}: {frame: number}) => {
             <div
               style={{
                 borderRadius: 999,
-                border: `1px solid ${COLORS.panelBorder}`,
-                color: '#a8b7c3',
+                border: isComposing
+                  ? `1px solid rgba(248, 206, 114, ${0.52 * composePulse})`
+                  : `1px solid ${COLORS.panelBorder}`,
+                color: isComposing ? '#d7c28f' : '#a8b7c3',
                 fontFamily: displayFont,
                 fontSize: 14,
                 fontWeight: 700,
@@ -597,6 +686,61 @@ const NotebookPane = ({frame}: {frame: number}) => {
   const toState8 = easeProgress(frame, TRANSITIONS.toState8[0], TRANSITIONS.toState8[1]);
   const toState9 = easeProgress(frame, TRANSITIONS.toState9[0], TRANSITIONS.toState9[1]);
   const zoom = mix(1, 1.01, easeProgress(frame, 0, 700));
+  const setupRunGlow = clamp(
+    interpolate(frame, [136, 146, 188, 200], [0, 1, 1, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    }),
+  );
+  const newCellRunGlow = clamp(
+    interpolate(frame, [334, 344, 384, 396], [0, 1, 1, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    }),
+  );
+  const badgeSetup = clamp(
+    interpolate(frame, [136, 146, 184, 196], [0, 1, 1, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    }),
+  );
+  const badgeNewCell = clamp(
+    interpolate(frame, [334, 344, 382, 394], [0, 1, 1, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    }),
+  );
+  const rerunCellGlow = clamp(
+    interpolate(frame, [510, 520, 562, 574], [0, 1, 1, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    }),
+  );
+  const glowPulse = 0.74 + 0.26 * (0.5 + 0.5 * Math.sin(frame * 0.33));
+  const outputFive = clamp(
+    interpolate(frame, [396, 408, 446, 458], [0, 1, 1, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    }),
+  );
+  const badgeRerun = clamp(
+    interpolate(frame, [522, 534, 566, 578], [0, 1, 1, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    }),
+  );
+  const reasonHint = clamp(
+    interpolate(frame, [516, 528, 568, 580], [0, 1, 1, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    }),
+  );
+  const planHint = clamp(
+    interpolate(frame, [526, 538, 572, 584], [0, 1, 1, 0], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    }),
+  );
 
   return (
     <PanelShell
@@ -716,6 +860,216 @@ const NotebookPane = ({frame}: {frame: number}) => {
             opacity: toState9,
           }}
         />
+        <div
+          style={{
+            position: 'absolute',
+            left: '7.4%',
+            top: '4.8%',
+            width: '91.1%',
+            height: '4.5%',
+            borderRadius: 8,
+            border: '1.5px solid rgba(255, 145, 73, 0.82)',
+            background:
+              'linear-gradient(90deg, rgba(255, 145, 73, 0.18) 0%, rgba(255, 145, 73, 0.08) 58%, rgba(255, 145, 73, 0.03) 100%)',
+            boxShadow: '0 0 18px rgba(255, 145, 73, 0.45)',
+            opacity: setupRunGlow * glowPulse,
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            left: '7.4%',
+            top: '10.1%',
+            width: '91.1%',
+            height: '4.5%',
+            borderRadius: 8,
+            border: '1.5px solid rgba(255, 145, 73, 0.82)',
+            background:
+              'linear-gradient(90deg, rgba(255, 145, 73, 0.18) 0%, rgba(255, 145, 73, 0.08) 58%, rgba(255, 145, 73, 0.03) 100%)',
+            boxShadow: '0 0 18px rgba(255, 145, 73, 0.45)',
+            opacity: setupRunGlow * glowPulse,
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            left: '7.4%',
+            top: '15.4%',
+            width: '91.1%',
+            height: '4.5%',
+            borderRadius: 8,
+            border: '1.5px solid rgba(255, 145, 73, 0.82)',
+            background:
+              'linear-gradient(90deg, rgba(255, 145, 73, 0.18) 0%, rgba(255, 145, 73, 0.08) 58%, rgba(255, 145, 73, 0.03) 100%)',
+            boxShadow: '0 0 18px rgba(255, 145, 73, 0.45)',
+            opacity: setupRunGlow * glowPulse,
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            right: 18,
+            top: 18,
+            padding: '8px 12px',
+            borderRadius: 8,
+            border: '1px solid rgba(255, 138, 61, 0.55)',
+            background: 'rgba(8, 22, 30, 0.82)',
+            color: '#ffd5b2',
+            fontFamily: monoFont,
+            fontSize: 14,
+            fontWeight: 700,
+            letterSpacing: '0.01em',
+            opacity: badgeSetup,
+            transform: `translateY(${mix(6, 0, badgeSetup)}px)`,
+          }}
+        >
+          only these cells run: [1]-[3]
+        </div>
+        <div
+          style={{
+            position: 'absolute',
+            right: 18,
+            top: 18,
+            padding: '8px 12px',
+            borderRadius: 8,
+            border: '1px solid rgba(255, 138, 61, 0.55)',
+            background: 'rgba(8, 22, 30, 0.82)',
+            color: '#ffd5b2',
+            fontFamily: monoFont,
+            fontSize: 14,
+            fontWeight: 700,
+            letterSpacing: '0.01em',
+            opacity: badgeNewCell,
+            transform: `translateY(${mix(6, 0, badgeNewCell)}px)`,
+          }}
+        >
+          only these cells run: [4]
+        </div>
+        <div
+          style={{
+            position: 'absolute',
+            left: '7.4%',
+            top: '24.6%',
+            width: '91.1%',
+            height: '6.9%',
+            borderRadius: 8,
+            border: '1.5px solid rgba(255, 145, 73, 0.82)',
+            background:
+              'linear-gradient(90deg, rgba(255, 145, 73, 0.18) 0%, rgba(255, 145, 73, 0.08) 58%, rgba(255, 145, 73, 0.03) 100%)',
+            boxShadow: '0 0 18px rgba(255, 145, 73, 0.45)',
+            opacity: newCellRunGlow * glowPulse,
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            left: '7.4%',
+            top: '10.1%',
+            width: '91.1%',
+            height: '4.5%',
+            borderRadius: 8,
+            border: '1.5px solid rgba(255, 145, 73, 0.82)',
+            background:
+              'linear-gradient(90deg, rgba(255, 145, 73, 0.18) 0%, rgba(255, 145, 73, 0.08) 58%, rgba(255, 145, 73, 0.03) 100%)',
+            boxShadow: '0 0 18px rgba(255, 145, 73, 0.45)',
+            opacity: rerunCellGlow * glowPulse,
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            left: '7.4%',
+            top: '24.6%',
+            width: '91.1%',
+            height: '6.9%',
+            borderRadius: 8,
+            border: '1.5px solid rgba(255, 145, 73, 0.82)',
+            background:
+              'linear-gradient(90deg, rgba(255, 145, 73, 0.18) 0%, rgba(255, 145, 73, 0.08) 58%, rgba(255, 145, 73, 0.03) 100%)',
+            boxShadow: '0 0 18px rgba(255, 145, 73, 0.45)',
+            opacity: rerunCellGlow * glowPulse,
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            right: 18,
+            top: 18,
+            padding: '8px 12px',
+            borderRadius: 8,
+            border: '1px solid rgba(255, 138, 61, 0.55)',
+            background: 'rgba(8, 22, 30, 0.82)',
+            color: '#ffd5b2',
+            fontFamily: monoFont,
+            fontSize: 14,
+            fontWeight: 700,
+            letterSpacing: '0.01em',
+            opacity: badgeRerun,
+            transform: `translateY(${mix(6, 0, badgeRerun)}px)`,
+          }}
+        >
+          only these cells run: [5]-[7]
+        </div>
+        <div
+          style={{
+            position: 'absolute',
+            right: 18,
+            top: 58,
+            padding: '6px 10px',
+            borderRadius: 8,
+            border: '1px solid rgba(141, 245, 166, 0.45)',
+            background: 'rgba(8, 22, 30, 0.82)',
+            color: '#d6f8e0',
+            fontFamily: monoFont,
+            fontSize: 13,
+            fontWeight: 700,
+            letterSpacing: '0.01em',
+            opacity: reasonHint,
+            transform: `translateY(${mix(6, 0, reasonHint)}px)`,
+          }}
+        >
+          reasoning: 10 / 5 = 2
+        </div>
+        <div
+          style={{
+            position: 'absolute',
+            right: 18,
+            top: 94,
+            padding: '6px 10px',
+            borderRadius: 8,
+            border: '1px solid rgba(133, 223, 255, 0.48)',
+            background: 'rgba(8, 22, 30, 0.82)',
+            color: '#d8f4ff',
+            fontFamily: monoFont,
+            fontSize: 13,
+            fontWeight: 700,
+            letterSpacing: '0.01em',
+            opacity: planHint,
+            transform: `translateY(${mix(6, 0, planHint)}px)`,
+          }}
+        >
+          plan: edit base, rerun [5]-[7]
+        </div>
+        <div
+          style={{
+            position: 'absolute',
+            right: 18,
+            top: 18,
+            padding: '8px 12px',
+            borderRadius: 8,
+            border: '1px solid rgba(69, 216, 201, 0.5)',
+            background: 'rgba(8, 22, 30, 0.82)',
+            color: '#c9f7ef',
+            fontFamily: monoFont,
+            fontSize: 15,
+            fontWeight: 700,
+            letterSpacing: '0.01em',
+            opacity: outputFive,
+            transform: `translateY(${mix(6, 0, outputFive)}px)`,
+          }}
+        >
+          observed output: 5
+        </div>
       </div>
     </PanelShell>
   );

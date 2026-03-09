@@ -146,6 +146,28 @@ class JupyterLiveKernelUnitTests(unittest.TestCase):
         with mock.patch.object(JUPYTER_LIVE_KERNEL, '_get_kernel_model', return_value={}):
             JUPYTER_LIVE_KERNEL._ensure_kernel_idle(server, 'kernel-1', timeout=1)
 
+    def test_ensure_kernel_idle_raises_when_kernel_never_becomes_idle(self) -> None:
+        server = JUPYTER_LIVE_KERNEL.ServerInfo(
+            url='http://127.0.0.1:9999',
+            base_url='/',
+            root_dir='.',
+            token='',
+        )
+        with (
+            mock.patch.object(
+                JUPYTER_LIVE_KERNEL,
+                '_get_kernel_model',
+                return_value={'execution_state': 'busy'},
+            ),
+            mock.patch.object(JUPYTER_LIVE_KERNEL.time, 'time', side_effect=[0.0, 0.0, 0.3, 0.6, 1.2]),
+            mock.patch.object(JUPYTER_LIVE_KERNEL.time, 'sleep'),
+        ):
+            with self.assertRaises(JUPYTER_LIVE_KERNEL.CommandError) as exc_info:
+                JUPYTER_LIVE_KERNEL._ensure_kernel_idle(server, 'kernel-1', timeout=1)
+
+        self.assertIn('Timed out waiting for kernel kernel-1 to become idle before execution.', str(exc_info.exception))
+        self.assertIn("'busy'", str(exc_info.exception))
+
     def test_websocket_execute_checks_kernel_idle_before_connecting(self) -> None:
         server = JUPYTER_LIVE_KERNEL.ServerInfo(
             url='http://127.0.0.1:9999',
@@ -176,6 +198,39 @@ class JupyterLiveKernelUnitTests(unittest.TestCase):
         ensure_idle.assert_called_once_with(server, 'kernel-1', 5.0)
         ws_url.assert_called_once_with(server, 'kernel-1', session_id='session-1')
         self.assertFalse(exc_info.exception.request_sent)
+
+    def test_websocket_execute_timeout_after_send_is_retry_unsafe(self) -> None:
+        server = JUPYTER_LIVE_KERNEL.ServerInfo(
+            url='http://127.0.0.1:9999',
+            base_url='/',
+            root_dir='.',
+            token='',
+        )
+        request = JUPYTER_LIVE_KERNEL.ExecuteRequest(code='1 + 1')
+        client = mock.Mock()
+        client.websocket_headers.return_value = []
+        ws = mock.Mock()
+
+        with (
+            mock.patch.object(JUPYTER_LIVE_KERNEL, '_ensure_kernel_idle'),
+            mock.patch.object(JUPYTER_LIVE_KERNEL, 'ServerClient', return_value=client),
+            mock.patch.object(JUPYTER_LIVE_KERNEL, '_ws_url', return_value='ws://127.0.0.1:9999/ws'),
+            mock.patch.object(JUPYTER_LIVE_KERNEL.websocket, 'create_connection', return_value=ws),
+            mock.patch.object(JUPYTER_LIVE_KERNEL.time, 'time', side_effect=[0.0, 31.0]),
+        ):
+            with self.assertRaises(JUPYTER_LIVE_KERNEL.TransportRetryUnsafeError) as exc_info:
+                JUPYTER_LIVE_KERNEL._execute_via_websocket(
+                    server,
+                    kernel_id='kernel-1',
+                    session_id='session-1',
+                    path=NOTEBOOK_PATH,
+                    request=request,
+                    timeout=30,
+                )
+
+        ws.send.assert_called_once()
+        self.assertTrue(exc_info.exception.request_sent)
+        self.assertIn('Timed out waiting for kernel execution to finish over websocket.', str(exc_info.exception))
 
     def test_probe_server_distinguishes_auth_failure_from_unreachable(self) -> None:
         server = JUPYTER_LIVE_KERNEL.ServerInfo(

@@ -911,15 +911,21 @@ def _ensure_kernel_idle(server: ServerInfo, kernel_id: str, timeout: float) -> N
     """
     client = ServerClient(server, timeout=timeout)
     deadline = time.time() + min(timeout, 10.0)
+    last_state: str | None = None
     while time.time() < deadline:
         try:
             model = _get_kernel_model(server, kernel_id, timeout=timeout, client=client)
         except HTTPCommandError:
             time.sleep(0.2)
             continue
-        if model.get("execution_state") in {"idle", None}:
+        last_state = model.get("execution_state")
+        if last_state in {"idle", None}:
             return
         time.sleep(0.2)
+    raise CommandError(
+        f"Timed out waiting for kernel {kernel_id} to become idle before execution. "
+        f"Last state: {last_state!r}."
+    )
 
 
 def _execute_request_with_target(
@@ -1123,7 +1129,12 @@ def _execute_via_websocket(
                 break
         else:
             raise CommandError("Timed out waiting for kernel execution to finish over websocket.")
-    except CommandError:
+    except CommandError as exc:
+        if request_sent:
+            raise TransportRetryUnsafeError(
+                _sanitize_error_text(str(exc), server_token=server.token),
+                request_sent=True,
+            ) from exc
         raise
     except (OSError, websocket.WebSocketException, json.JSONDecodeError) as exc:
         raise TransportRetryUnsafeError(_sanitize_error_text(str(exc), server_token=server.token), request_sent=request_sent) from exc
@@ -1387,7 +1398,6 @@ def restart_and_run_all(
         kernel_id=target.kernel_id,
         timeout=timeout,
     )
-    _ensure_kernel_idle(server, target.kernel_id, timeout)
     run_all = run_all_cells(
         server,
         path=target.path,
