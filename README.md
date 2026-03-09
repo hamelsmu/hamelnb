@@ -7,9 +7,9 @@ Coding agents write entire scripts in one shot, then debug from the top when som
 
 `hamelnb` gives your coding agent a live Jupyter notebook kernel. Instead of generating a 200-line script and hoping it works, the agent can explore an API interactively, check return values, fix one thing at a time, and build up working code cell by cell -- the same way you would.
 
-> "Fixing 1 local bug should not require restarting the whole job."
+> "Though bash is a completely valid REPL, the amount of time coding agents lose during experimentation because they iterate on scripts instead of a Jupyter-like in-memory REPL is basically dumb. Fixing 1 local bug should not require restarting the whole job. Need better scaffolds."
 >
-> Inspired by [this post from Omar Khattab (@lateinteraction)](https://x.com/lateinteraction/status/2023459044648796465?s=20).
+> — [Omar Khattab (@lateinteraction)](https://x.com/lateinteraction/status/2023459044648796465?s=20)
 
 It works with Claude Code and Codex.
 
