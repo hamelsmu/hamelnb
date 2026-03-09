@@ -87,7 +87,7 @@ See the [Claude Code skills docs](https://code.claude.com/docs/en/slash-commands
 Use the standalone skill directly:
 
 ```text
-/hamelnb use notebooks/demo.ipynb and rerun only the cells affected by changing base from 1 to 2
+/hamelnb use notebooks/demo.ipynb and change price from 10 to 12, rerunning only dependent cells
 ```
 
 After the first target is clear, keep follow-up turns conversational.
@@ -95,7 +95,7 @@ After the first target is clear, keep follow-up turns conversational.
 If you load the repo as a Claude plugin, use:
 
 ```text
-/hamelnb:live-kernel use notebooks/demo.ipynb and rerun only the cells affected by changing base from 1 to 2
+/hamelnb:live-kernel use notebooks/demo.ipynb and change price from 10 to 12, rerunning only dependent cells
 ```
 
 ### Codex
@@ -103,7 +103,7 @@ If you load the repo as a Claude plugin, use:
 Mention `hamelnb` directly in your prompt:
 
 ```text
-Use hamelnb on notebooks/demo.ipynb and rerun only the cells affected by changing base from 1 to 2.
+Use hamelnb on notebooks/demo.ipynb and change price from 10 to 12, rerunning only dependent cells.
 ```
 
 If more than one live notebook or session matches, the agent should ask you to choose instead of guessing.
