@@ -932,6 +932,8 @@ def _ensure_kernel_idle(server: ServerInfo, kernel_id: str, timeout: float) -> N
         if last_state in {"idle", None}:
             return
         time.sleep(0.2)
+    if last_state == "starting":
+        return
     raise CommandError(
         f"Timed out waiting for kernel {kernel_id} to become idle before execution. "
         f"Last state: {last_state!r}."
@@ -982,7 +984,7 @@ def _execute_request_with_target(
                 ) from exc
             last_error = exc
             continue
-        except (CommandError, requests.RequestException, OSError, RuntimeError) as exc:
+        except (CommandError, requests.RequestException, OSError, RuntimeError) as exc:  # RuntimeError: jupyter_client raises this for connection/timeout failures
             last_error = exc
             continue
 
@@ -1314,7 +1316,6 @@ def run_all_cells(
         timeout=timeout,
     )
     _require_notebook_session(target, "Run-all")
-    _ensure_kernel_idle(server, target.kernel_id, timeout)
     notebook_path = path or target.path
 
     model = _load_notebook_model(server, notebook_path, timeout=timeout)

@@ -107,6 +107,7 @@ class JupyterCollaborationRefreshTests(unittest.TestCase):
         deadline = time.time() + 60
         while time.time() < deadline:
             if cls.proc.poll() is not None:
+                cls.log_handle.flush()
                 raise RuntimeError(cls.log_path.read_text(encoding="utf-8"))
             try:
                 response = requests.get(
@@ -167,58 +168,60 @@ class JupyterCollaborationRefreshTests(unittest.TestCase):
     def test_browser_updates_after_skill_edit_without_reload(self) -> None:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
-            page = browser.new_page(viewport={"width": 1440, "height": 1100})
-            navigations: list[str] = []
-            page.on(
-                "framenavigated",
-                lambda frame: navigations.append(frame.url) if frame == page.main_frame else None,
-            )
+            try:
+                page = browser.new_page(viewport={"width": 1440, "height": 1100})
+                navigations: list[str] = []
+                page.on(
+                    "framenavigated",
+                    lambda frame: navigations.append(frame.url) if frame == page.main_frame else None,
+                )
 
-            page.goto(
-                f"{self.base_url}/lab/tree/demo.ipynb?token={TOKEN}",
-                wait_until="domcontentloaded",
-                timeout=120000,
-            )
+                page.goto(
+                    f"{self.base_url}/lab/tree/demo.ipynb?token={TOKEN}",
+                    wait_until="domcontentloaded",
+                    timeout=120000,
+                )
 
-            original = page.locator(".cm-content").filter(has_text="ORIGINAL_MARKDOWN_TEXT").first
-            expect(original).to_contain_text("ORIGINAL_MARKDOWN_TEXT", timeout=30000)
+                original = page.locator(".cm-content").filter(has_text="ORIGINAL_MARKDOWN_TEXT").first
+                expect(original).to_contain_text("ORIGINAL_MARKDOWN_TEXT", timeout=30000)
 
-            before_shot = self._artifact_path("collaboration-before.png")
-            if before_shot is not None:
-                page.screenshot(path=str(before_shot), full_page=True)
+                before_shot = self._artifact_path("collaboration-before.png")
+                if before_shot is not None:
+                    page.screenshot(path=str(before_shot), full_page=True)
 
-            navs_after_load = list(navigations)
+                navs_after_load = list(navigations)
 
-            edit = subprocess.run(
-                [
-                    *skill_script_command(SCRIPT_PATH),
-                    "edit",
-                    "--port",
-                    str(self.port),
-                    "--path",
-                    "demo.ipynb",
-                    "replace-source",
-                    "--cell-id",
-                    "md-1",
-                    "--source",
-                    "UPDATED_MARKDOWN_TEXT",
-                    "--compact",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            self.assertEqual(edit.returncode, 0, msg=edit.stderr or edit.stdout)
+                edit = subprocess.run(
+                    [
+                        *skill_script_command(SCRIPT_PATH),
+                        "edit",
+                        "--port",
+                        str(self.port),
+                        "--path",
+                        "demo.ipynb",
+                        "replace-source",
+                        "--cell-id",
+                        "md-1",
+                        "--source",
+                        "UPDATED_MARKDOWN_TEXT",
+                        "--compact",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                self.assertEqual(edit.returncode, 0, msg=edit.stderr or edit.stdout)
 
-            payload = json.loads(edit.stdout)
-            self.assertTrue(payload["changed"])
+                payload = json.loads(edit.stdout)
+                self.assertTrue(payload["changed"])
 
-            updated = page.locator(".cm-content").filter(has_text="UPDATED_MARKDOWN_TEXT").first
-            expect(updated).to_contain_text("UPDATED_MARKDOWN_TEXT", timeout=10000)
+                updated = page.locator(".cm-content").filter(has_text="UPDATED_MARKDOWN_TEXT").first
+                expect(updated).to_contain_text("UPDATED_MARKDOWN_TEXT", timeout=10000)
 
-            after_shot = self._artifact_path("collaboration-after.png")
-            if after_shot is not None:
-                page.screenshot(path=str(after_shot), full_page=True)
+                after_shot = self._artifact_path("collaboration-after.png")
+                if after_shot is not None:
+                    page.screenshot(path=str(after_shot), full_page=True)
 
-            self.assertEqual(navigations, navs_after_load)
-            browser.close()
+                self.assertEqual(navigations, navs_after_load)
+            finally:
+                browser.close()
