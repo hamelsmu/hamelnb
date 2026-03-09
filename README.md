@@ -76,11 +76,41 @@ See the [Claude Code skills docs](https://code.claude.com/docs/en/slash-commands
 Fast/default suite:
 
 ```bash
-python3 -m pytest tests/test_jupyter_live_kernel.py -v
+uv run --group dev pytest tests/test_jupyter_live_kernel.py -v
 ```
 
 Full suite (includes slow live-kernel verification scenarios):
 
 ```bash
-JLK_RUN_SLOW_INTEGRATION=1 python3 -m pytest tests/test_jupyter_live_kernel.py -v
+JLK_RUN_SLOW_INTEGRATION=1 uv run --group dev pytest tests/test_jupyter_live_kernel.py -v
+```
+
+Browser collaboration smoke test:
+
+```bash
+uv run --group dev --group browser playwright install chromium
+JLK_RUN_BROWSER_INTEGRATION=1 uv run --group dev --group browser pytest tests/test_jupyter_collaboration_refresh.py -v
+```
+
+Manual collaborative JupyterLab launch for browser-refresh debugging:
+
+```bash
+mkdir -p /tmp/jupyter-live-kernel-collab
+uv run --with jupyterlab --with jupyter-collaboration jupyter lab \
+  --no-browser \
+  --collaborative \
+  --LabApp.extension_manager=readonly \
+  --IdentityProvider.token=testtoken \
+  --ServerApp.password= \
+  --ServerApp.port=8899 \
+  --ServerApp.port_retries=0 \
+  --ServerApp.root_dir=/tmp/jupyter-live-kernel-collab
+```
+
+To keep before/after screenshots from the Playwright run:
+
+```bash
+JLK_BROWSER_ARTIFACT_DIR=/tmp/jlk-browser-artifacts \
+JLK_RUN_BROWSER_INTEGRATION=1 \
+uv run --group dev --group browser pytest tests/test_jupyter_collaboration_refresh.py -v
 ```

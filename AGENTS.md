@@ -10,10 +10,25 @@ Primary files:
 - [jupyter_live_kernel.py](./skills/jupyter-live-kernel/scripts/jupyter_live_kernel.py)
 - [test_jupyter_live_kernel.py](./tests/test_jupyter_live_kernel.py)
 
+## Test Plan
+
+Use this order unless the change is obviously docs-only:
+
+```bash
+uv run --group dev pytest tests/test_jupyter_live_kernel.py -v
+JLK_RUN_SLOW_INTEGRATION=1 uv run --group dev pytest tests/test_jupyter_live_kernel.py -v
+uv run --group dev --group browser playwright install chromium
+JLK_RUN_BROWSER_INTEGRATION=1 uv run --group dev --group browser pytest tests/test_jupyter_collaboration_refresh.py -v
+```
+
+- Run the fast suite for normal script or parser changes.
+- Add the slow suite when server/session/transport behavior changes.
+- Add the Playwright test when notebook save, collaboration, or browser refresh behavior changes.
+
 ## Fastest Test Path
 
 ```bash
-python3 -m pytest tests/test_jupyter_live_kernel.py -v
+uv run --group dev pytest tests/test_jupyter_live_kernel.py -v
 ```
 
 This runs the default fast suite (unit + non-slow integration) and skips expensive verification scenarios.
@@ -21,7 +36,7 @@ This runs the default fast suite (unit + non-slow integration) and skips expensi
 ## Full Coverage Test Path
 
 ```bash
-JLK_RUN_SLOW_INTEGRATION=1 python3 -m pytest tests/test_jupyter_live_kernel.py -v
+JLK_RUN_SLOW_INTEGRATION=1 uv run --group dev pytest tests/test_jupyter_live_kernel.py -v
 ```
 
 This additionally covers:
@@ -40,7 +55,7 @@ Start a disposable JupyterLab:
 
 ```bash
 mkdir -p /tmp/jupyter-live-kernel-demo
-jupyter lab \
+uv run --with jupyterlab jupyter lab \
   --no-browser \
   --IdentityProvider.token=testtoken \
   --ServerApp.password= \
@@ -53,12 +68,27 @@ Then run:
 
 ```bash
 SCRIPT=skills/jupyter-live-kernel/scripts/jupyter_live_kernel.py
-python3 "$SCRIPT" servers --compact
-python3 "$SCRIPT" notebooks --port 8899 --compact
-python3 "$SCRIPT" contents --port 8899 --path demo.ipynb --compact
-python3 "$SCRIPT" execute --port 8899 --path demo.ipynb --code $'x = 41\nx + 1' --compact
-python3 "$SCRIPT" variables --port 8899 --path demo.ipynb list --compact
-python3 "$SCRIPT" run-all --port 8899 --path demo.ipynb --compact
+uv run "$SCRIPT" servers --compact
+uv run "$SCRIPT" notebooks --port 8899 --compact
+uv run "$SCRIPT" contents --port 8899 --path demo.ipynb --compact
+uv run "$SCRIPT" execute --port 8899 --path demo.ipynb --code $'x = 41\nx + 1' --compact
+uv run "$SCRIPT" variables --port 8899 --path demo.ipynb list --compact
+uv run "$SCRIPT" run-all --port 8899 --path demo.ipynb --compact
+```
+
+For collaboration/browser-refresh validation, launch a collaborative Lab instead:
+
+```bash
+mkdir -p /tmp/jupyter-live-kernel-collab
+uv run --with jupyterlab --with jupyter-collaboration jupyter lab \
+  --no-browser \
+  --collaborative \
+  --LabApp.extension_manager=readonly \
+  --IdentityProvider.token=testtoken \
+  --ServerApp.password= \
+  --ServerApp.port=8899 \
+  --ServerApp.port_retries=0 \
+  --ServerApp.root_dir=/tmp/jupyter-live-kernel-collab
 ```
 
 ## Operating Order

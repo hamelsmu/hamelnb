@@ -15,24 +15,42 @@ Run from the repo root.
 SCRIPT=skills/jupyter-live-kernel/scripts/jupyter_live_kernel.py
 ```
 
+Prefer `uv` for this skill. The helper script declares its runtime dependencies inline, so the default invocation is:
+
+```bash
+uv run "$SCRIPT" --help
+```
+
+Because the script uses inline metadata, `uv run "$SCRIPT"` stays self-contained even when you launch it from inside this repo.
+
+If the script is executable and `uv` is on `PATH`, direct execution also works:
+
+```bash
+"$SCRIPT" --help
+```
+
+Fallback:
+- Use `python3 "$SCRIPT" ...` only if `uv` is unavailable and the required packages are already installed.
+- If you need to add a new runtime dependency to the helper script, prefer `uv add --script "$SCRIPT" <package>`.
+
 1. Discover reachable servers.
 ```bash
-python3 "$SCRIPT" servers --compact
+uv run "$SCRIPT" servers --compact
 ```
 
 2. Find live notebooks.
 ```bash
-python3 "$SCRIPT" notebooks --port 8899 --compact
+uv run "$SCRIPT" notebooks --port 8899 --compact
 ```
 
 3. Inspect the saved notebook.
 ```bash
-python3 "$SCRIPT" contents --port 8899 --path demo.ipynb --compact
+uv run "$SCRIPT" contents --port 8899 --path demo.ipynb --compact
 ```
 
 4. Execute code incrementally in the live kernel.
 ```bash
-python3 "$SCRIPT" execute \
+uv run "$SCRIPT" execute \
   --port 8899 \
   --path demo.ipynb \
   --code $'x = 41\nprint("hello")\nx + 1' \
@@ -42,7 +60,7 @@ python3 "$SCRIPT" execute \
 5. Edit saved notebook cells.
 Use a real cell ID returned by `contents`.
 ```bash
-python3 "$SCRIPT" edit \
+uv run "$SCRIPT" edit \
   --port 8899 \
   --path demo.ipynb \
   replace-source \
@@ -93,16 +111,16 @@ Once selected, keep using the same `port + path` and, when applicable, `session_
 Inspect live Python-kernel variables:
 
 ```bash
-python3 "$SCRIPT" variables --port 8899 --path demo.ipynb list --compact
-python3 "$SCRIPT" variables --port 8899 --path demo.ipynb preview --name x --compact
+uv run "$SCRIPT" variables --port 8899 --path demo.ipynb list --compact
+uv run "$SCRIPT" variables --port 8899 --path demo.ipynb preview --name x --compact
 ```
 
 Verification commands:
 
 ```bash
-python3 "$SCRIPT" restart --port 8899 --path demo.ipynb --compact
-python3 "$SCRIPT" run-all --port 8899 --path demo.ipynb --compact
-python3 "$SCRIPT" restart-run-all --port 8899 --path demo.ipynb --compact
+uv run "$SCRIPT" restart --port 8899 --path demo.ipynb --compact
+uv run "$SCRIPT" run-all --port 8899 --path demo.ipynb --compact
+uv run "$SCRIPT" restart-run-all --port 8899 --path demo.ipynb --compact
 ```
 
 Advanced guidance:
