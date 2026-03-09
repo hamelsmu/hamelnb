@@ -1,0 +1,76 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="180" y1="70" x2="1410" y2="820" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#08131D"/>
+      <stop offset="0.58" stop-color="#0C1824"/>
+      <stop offset="1" stop-color="#09131B"/>
+    </linearGradient>
+    <linearGradient id="agentPanel" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#131F2B"/>
+      <stop offset="1" stop-color="#0C141D"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="22" stdDeviation="28" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+    <filter id="arrowGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="0" stdDeviation="7" flood-color="#8BC8FF" flood-opacity="0.24"/>
+    </filter>
+    <style>
+      .display { font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif; }
+      .mono { font-family: "SFMono-Regular", "Menlo", "Monaco", "Liberation Mono", monospace; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <circle cx="184" cy="122" r="190" fill="#12364C" fill-opacity="0.14"/>
+  <circle cx="1428" cy="790" r="218" fill="#123B30" fill-opacity="0.11"/>
+
+  <g filter="url(#shadow)">
+    <rect x="54" y="196" width="616" height="488" rx="34" fill="url(#agentPanel)" stroke="#213242"/>
+    <rect x="54" y="196" width="616" height="78" rx="34" fill="#162433"/>
+    <circle cx="92" cy="235" r="6.5" fill="#FF6A5A"/>
+    <circle cx="126" cy="235" r="6.5" fill="#FFC857"/>
+    <circle cx="160" cy="235" r="6.5" fill="#35D07F"/>
+    <text x="362" y="244" text-anchor="middle" class="display" fill="#E9EFF6" font-size="30" font-weight="700">coding agent</text>
+
+    <circle cx="98" cy="314" r="6" fill="#35D07F"/>
+    <text x="118" y="321" class="mono" fill="#9CC5A8" font-size="19">connected: demo.ipynb (port 8888)</text>
+
+    <rect x="82" y="370" width="560" height="76" rx="18" fill="#101A24" stroke="#2A4052"/>
+    <text x="106" y="416" class="mono" fill="#F4EBDD" font-size="26" font-weight="700">/hamelnb make the final output 10</text>
+
+    <circle cx="98" cy="508" r="5.5" fill="#7DD5FF"/>
+    <text x="118" y="516" class="display" fill="#E7EEF5" font-size="25" font-weight="600">Done. Final output is 10.</text>
+  </g>
+
+  <g opacity="0.98" filter="url(#arrowGlow)">
+    <path d="M700 402H828" stroke="#8BC8FF" stroke-width="8" stroke-linecap="round"/>
+    <path d="M828 402L802 383" stroke="#8BC8FF" stroke-width="8" stroke-linecap="round"/>
+    <path d="M828 402L802 421" stroke="#8BC8FF" stroke-width="8" stroke-linecap="round"/>
+
+    <path d="M828 578H700" stroke="#9EE5B2" stroke-width="8" stroke-linecap="round"/>
+    <path d="M700 578L726 559" stroke="#9EE5B2" stroke-width="8" stroke-linecap="round"/>
+    <path d="M700 578L726 597" stroke="#9EE5B2" stroke-width="8" stroke-linecap="round"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="846" y="184" width="688" height="532" rx="30" fill="#F2F4F7" stroke="#FFFFFF" stroke-opacity="0.16"/>
+    <rect x="846" y="184" width="688" height="40" rx="30" fill="#D9DEE6"/>
+    <circle cx="874" cy="204" r="4" fill="#C4CAD3"/>
+    <circle cx="890" cy="204" r="4" fill="#C4CAD3"/>
+    <circle cx="906" cy="204" r="4" fill="#C4CAD3"/>
+    <text x="1508" y="211" text-anchor="end" class="display" fill="#636A73" font-size="18" font-weight="600">demo.ipynb</text>
+
+    <text x="878" y="308" class="mono" fill="#A7AFB8" font-size="18">[1]:</text>
+    <rect x="938" y="282" width="548" height="40" rx="8" fill="#FFFFFF" stroke="#D7DCE3"/>
+    <rect x="938" y="282" width="5" height="40" rx="2.5" fill="#FF934E"/>
+    <text x="962" y="308" class="mono" fill="#30363D" font-size="22" font-weight="700">base = 2</text>
+
+    <text x="878" y="442" class="mono" fill="#A7AFB8" font-size="18">[2]:</text>
+    <rect x="938" y="416" width="548" height="40" rx="8" fill="#FFFFFF" stroke="#D7DCE3"/>
+    <rect x="938" y="416" width="5" height="40" rx="2.5" fill="#FF934E"/>
+    <text x="962" y="442" class="mono" fill="#30363D" font-size="22" font-weight="700">base * 5</text>
+    <text x="878" y="500" class="mono" fill="#A7AFB8" font-size="18">[2]:</text>
+    <text x="954" y="500" class="mono" fill="#3F454B" font-size="28" font-weight="700">10</text>
+  </g>
+</svg>

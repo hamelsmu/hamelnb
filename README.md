@@ -11,7 +11,7 @@ Coding agents write entire scripts in one shot, then debug from the top when som
 >
 > — [Omar Khattab (@lateinteraction)](https://x.com/lateinteraction/status/2023459044648796465?s=20)
 
-It works with Claude Code and Codex.
+It works with Claude Code and Codex. In Claude Code, the standalone entrypoint is `/hamelnb`. If you load the repo as a Claude plugin, the plugin entrypoint is `/hamelnb:live-kernel`.
 
 ## Use it when
 
@@ -53,15 +53,64 @@ claude --add-dir ~/.agent-skills/hamelnb
 
 Already in a session? Run `/add-dir ~/.agent-skills/hamelnb`.
 
+This uses Claude Code's standalone skill loading. The command is `/hamelnb`.
+
 To make the skill available in every project without `--add-dir`:
 
 ```bash
 git clone https://github.com/hamelsmu/hamelnb.git ~/.agent-skills/hamelnb
 mkdir -p ~/.claude/skills
-ln -s ~/.agent-skills/hamelnb/.claude/skills/jupyter-live-kernel ~/.claude/skills/jupyter-live-kernel
+ln -s ~/.agent-skills/hamelnb/.claude/skills/hamelnb ~/.claude/skills/hamelnb
 ```
 
+If you want to use the repo as an actual Claude plugin instead of a standalone skill:
+
+```bash
+claude --plugin-dir ~/.agent-skills/hamelnb
+```
+
+In plugin mode the command is namespaced as `/hamelnb:live-kernel`.
+
 See the [Claude Code skills docs](https://code.claude.com/docs/en/slash-commands) for more on how skills work.
+
+## Usage
+
+The public standalone skill name is `hamelnb`.
+
+### Claude Code
+
+Standalone skill invocation:
+
+```text
+/hamelnb inspect notebooks/demo.ipynb and show me the current output
+```
+
+Keep follow-up turns conversational after the first target is clear. You do not need a `/hamelnb:<action>` convention.
+
+Plugin invocation:
+
+```text
+/hamelnb:live-kernel inspect notebooks/demo.ipynb and show me the current output
+```
+
+Claude's current docs are explicit here:
+- standalone skills in `.claude/skills/<skill-name>/SKILL.md` use `/skill-name`
+- plugins with `.claude-plugin/plugin.json` use `/plugin-name:skill-name`
+
+Relevant Claude Code slash commands:
+
+- `/add-dir ~/.agent-skills/hamelnb` to load this repo's standalone skill in the current session
+- `--plugin-dir ~/.agent-skills/hamelnb` when you want the plugin form instead
+
+### Codex
+
+Mention the skill name directly in your prompt so the agent knows to use it:
+
+```text
+Use hamelnb to inspect notebooks/demo.ipynb and rerun only the affected cells.
+```
+
+If more than one live notebook or session matches, the agent should ask you to choose instead of guessing.
 
 ## Docs
 
@@ -73,7 +122,9 @@ See the [Claude Code skills docs](https://code.claude.com/docs/en/slash-commands
 - `skills/jupyter-live-kernel/scripts/jupyter_live_kernel.py` -- the main script
 - `skills/jupyter-live-kernel/references/jupyter-hooks.md` -- Jupyter API notes
 - `tests/test_jupyter_live_kernel.py` -- test suite
-- `.claude/skills/jupyter-live-kernel/` -- Claude Code entrypoint
+- `.claude/skills/hamelnb/` -- Claude standalone skill entrypoint
+- `.claude-plugin/plugin.json` -- Claude plugin manifest
+- `skills/live-kernel/` -- Claude plugin skill entrypoint
 
 ## Running tests
 
