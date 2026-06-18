@@ -9,13 +9,21 @@ Use this skill when a local notebook kernel already holds useful state and you d
 
 ## Starting JupyterLab
 
-When launching JupyterLab for use with this skill, disable token and password auth so the script can access the server API without browser session cookies:
+When launching JupyterLab for use with this skill, disable token and password auth so the script can access the server API without browser session cookies.
+
+If JupyterLab is installed in a virtual environment or with `uv tool install jupyterlab`, also export `VIRTUAL_ENV` and prepend the environment's `bin` directory to `PATH`. That lets notebook shell commands such as `!uv pip install pandas` install into the live kernel environment without passing `--python` explicitly.
+
+For a `uv tool install jupyterlab` setup:
 
 ```bash
-jupyter lab --IdentityProvider.token='' --ServerApp.password=''
+JUPYTER_ENV="$HOME/.local/share/uv/tools/jupyterlab"
+VIRTUAL_ENV="$JUPYTER_ENV" PATH="$JUPYTER_ENV/bin:$PATH" \
+  jupyter lab --IdentityProvider.token='' --ServerApp.password=''
 ```
 
-If the server is already running but returns 403 errors, restart it with these flags.
+For any other virtual environment, replace `JUPYTER_ENV` with that environment path. The `$HOME/.local/share/uv/tools/jupyterlab` path is the Linux default; run `uv tool dir` to print the base path on your platform (it differs on macOS and Windows).
+
+If the server is already running but returns 403 errors, restart it with the token/password flags. If `!uv pip install ...` says `No virtual environment found`, restart it with `VIRTUAL_ENV` set as shown above.
 
 ## Core Loop
 
@@ -102,6 +110,51 @@ Core guidance:
 - Use `--save-outputs` with `run-all` or `restart-run-all` to persist cell outputs into the notebook file so they appear in the JupyterLab UI.
 - When using `execute` with `--cell-id`, outputs are automatically saved to the notebook file (no need to pass `--save-outputs` separately). Without `--cell-id`, outputs are not saved.
 - To use the kernel as a pure REPL without persisting outputs, pass `--no-save-outputs`. This suppresses the automatic save even when `--cell-id` is provided. Only use this flag when the user explicitly says they don't need the notebook updated (e.g. "run this headlessly", "I don't care about the notebook output"). Default to saving outputs.
+
+## Installing Packages Into The Live Kernel
+
+Start JupyterLab with `VIRTUAL_ENV` pointing at the environment that backs the
+kernel (see Starting JupyterLab above). Notebook shell commands then install into
+the live kernel environment without extra flags:
+
+```python
+!uv pip install pandas matplotlib
+```
+
+Avoid `!pip install ...` and `uv pip install --system` for the live kernel. When
+`pip` targets an externally managed interpreter (Debian, Ubuntu, Raspberry Pi OS,
+Homebrew), `pip install` is blocked by [PEP 668](https://peps.python.org/pep-0668/),
+and `--system` can target the wrong interpreter. Installing into the kernel's
+environment keeps packages scoped to the live kernel.
+
+If the server was started without `VIRTUAL_ENV`, `uv pip install ...` can fail
+with `No virtual environment found`. Restart JupyterLab with `VIRTUAL_ENV` set,
+as shown in Starting JupyterLab.
+
+To debug the target environment, inspect it from the notebook:
+
+```python
+import os, sys
+print(sys.executable)
+print(os.environ.get("VIRTUAL_ENV"))
+```
+
+If `sys.executable` is not inside `VIRTUAL_ENV` (for example, a separate
+project-venv kernel), `VIRTUAL_ENV`-based installs miss the kernel. Install into
+the exact kernel interpreter instead:
+
+```bash
+uv pip install --python /path/to/kernel/python pandas matplotlib
+```
+
+From inside a notebook, derive that path from `sys.executable`:
+
+```python
+import sys
+!uv pip install --python {sys.executable} pandas matplotlib
+```
+
+Restart the kernel after installing packages if imports still fail.
 
 ## Target Selection And Ambiguity
 
